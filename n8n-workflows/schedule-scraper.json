@@ -1,0 +1,295 @@
+{
+  "name": "AISIS Schedule Scraper - All Departments",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scrape-schedule",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://aisis.ateneo.edu/j_aisis/displayLogin.do",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true
+            }
+          }
+        }
+      },
+      "id": "get-login-page",
+      "name": "Get Login Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract rnd token from login page HTML\nconst html = $input.first().json.data || $input.first().json.body || '';\nconst rndMatch = html.match(/name=[\"']rnd[\"']\\s+value=[\"']([^\"']+)[\"']/i) ||\n                 html.match(/value=[\"']([^\"']+)[\"']\\s+name=[\"']rnd[\"']/i);\n\nif (!rndMatch) {\n  throw new Error('Could not find rnd token in login page');\n}\n\nconst rndToken = rndMatch[1];\n\n// Get cookies from response headers\nconst cookies = $input.first().json.headers?.['set-cookie'] || [];\nconst cookieString = Array.isArray(cookies) \n  ? cookies.map(c => c.split(';')[0]).join('; ')\n  : cookies.split(';')[0];\n\nreturn {\n  rndToken,\n  cookies: cookieString\n};"
+      },
+      "id": "extract-rnd",
+      "name": "Extract RND Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aisis.ateneo.edu/j_aisis/login.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userName",
+              "value": "={{ $env.AISIS_USERNAME }}"
+            },
+            {
+              "name": "password",
+              "value": "={{ $env.AISIS_PASSWORD }}"
+            },
+            {
+              "name": "rnd",
+              "value": "={{ $json.rndToken }}"
+            },
+            {
+              "name": "command",
+              "value": "login"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "submit-login",
+      "name": "Submit Login",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge cookies from login response\nconst prevCookies = $('Extract RND Token').first().json.cookies || '';\nconst newCookies = $input.first().json.headers?.['set-cookie'] || [];\n\nlet allCookies = prevCookies;\nif (Array.isArray(newCookies)) {\n  const newParsed = newCookies.map(c => c.split(';')[0]).join('; ');\n  allCookies = prevCookies + '; ' + newParsed;\n}\n\nreturn { cookies: allCookies };"
+      },
+      "id": "merge-cookies",
+      "name": "Merge Cookies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://aisis.ateneo.edu/j_aisis/J_VCSC.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "get-schedule-form",
+      "name": "Get Schedule Form",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract departments and periods from schedule form\nconst html = $input.first().json.body || '';\nconst cookies = $('Merge Cookies').first().json.cookies;\n\n// Extract departments\nconst deptRegex = /<option\\s+value=[\"']([^\"']+)[\"'][^>]*>([^<]+)<\\/option>/gi;\nconst deptSection = html.match(/<select[^>]*name=[\"']deptCode[\"'][^>]*>[\\s\\S]*?<\\/select>/i);\n\nconst departments = [];\nif (deptSection) {\n  let match;\n  while ((match = deptRegex.exec(deptSection[0])) !== null) {\n    if (match[1] && match[1] !== '') {\n      departments.push({ code: match[1], name: match[2].trim() });\n    }\n  }\n}\n\n// Extract periods\nconst periodSection = html.match(/<select[^>]*name=[\"']period[\"'][^>]*>[\\s\\S]*?<\\/select>/i);\nconst periods = [];\nif (periodSection) {\n  const periodRegex = /<option\\s+value=[\"']([^\"']+)[\"'][^>]*>/gi;\n  let match;\n  while ((match = periodRegex.exec(periodSection[0])) !== null) {\n    if (match[1]) periods.push(match[1]);\n  }\n}\n\nreturn {\n  cookies,\n  period: periods[0] || '2025-2',\n  departments,\n  departmentCount: departments.length\n};"
+      },
+      "id": "parse-form",
+      "name": "Parse Form Options",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create batch items for each department\nconst { cookies, period, departments } = $input.first().json;\n\nreturn departments.map(dept => ({\n  json: {\n    cookies,\n    period,\n    deptCode: dept.code,\n    deptName: dept.name\n  }\n}));"
+      },
+      "id": "split-depts",
+      "name": "Split Into Departments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 8,
+        "options": {}
+      },
+      "id": "batch-requests",
+      "name": "Batch (8 parallel)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aisis.ateneo.edu/j_aisis/J_VCSC.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookies }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "period",
+              "value": "={{ $json.period }}"
+            },
+            {
+              "name": "deptCode",
+              "value": "={{ $json.deptCode }}"
+            },
+            {
+              "name": "subjCode",
+              "value": "ALL"
+            },
+            {
+              "name": "command",
+              "value": "displayResults"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-schedule",
+      "name": "Fetch Schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse schedule HTML into structured data\nconst html = $input.first().json.data || $input.first().json.body || '';\nconst deptCode = $input.first().json.deptCode || $('Split Into Departments').first().json.deptCode;\n\nconst sections = [];\nconst tableRegex = /<table[^>]*>[\\s\\S]*?<\\/table>/gi;\nconst tables = html.match(tableRegex) || [];\n\nfor (const table of tables) {\n  const rows = table.match(/<tr[^>]*>[\\s\\S]*?<\\/tr>/gi) || [];\n  \n  for (const row of rows) {\n    const cells = row.match(/<td[^>]*>([\\s\\S]*?)<\\/td>/gi) || [];\n    if (cells.length < 7) continue;\n    \n    const getText = (cell) => cell.replace(/<[^>]+>/g, '').trim();\n    \n    const subjectCode = getText(cells[0]);\n    const section = getText(cells[1]);\n    const title = getText(cells[2]);\n    const units = parseFloat(getText(cells[3])) || 0;\n    const schedule = getText(cells[4]);\n    const room = getText(cells[5]);\n    const instructor = getText(cells[6]);\n    \n    // Skip header rows\n    if (!subjectCode || subjectCode.includes('SUBJ') || subjectCode.includes('CODE')) continue;\n    if (subjectCode.length < 2) continue;\n    \n    sections.push({\n      department: deptCode,\n      subjectCode,\n      section,\n      title,\n      units,\n      schedule,\n      room,\n      instructor\n    });\n  }\n}\n\nreturn { department: deptCode, sections, count: sections.length };"
+      },
+      "id": "parse-schedule",
+      "name": "Parse Schedule HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all department results\nconst allSections = [];\nconst deptStats = {};\n\nfor (const item of $input.all()) {\n  const { department, sections, count } = item.json;\n  deptStats[department] = count;\n  allSections.push(...sections);\n}\n\nreturn {\n  totalSections: allSections.length,\n  departmentCount: Object.keys(deptStats).length,\n  deptStats,\n  sections: allSections\n};"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, totalSections: $json.totalSections, departmentCount: $json.departmentCount, stats: $json.deptStats }) }}"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2600, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Get Login Page", "type": "main", "index": 0 }]]
+    },
+    "Get Login Page": {
+      "main": [[{ "node": "Extract RND Token", "type": "main", "index": 0 }]]
+    },
+    "Extract RND Token": {
+      "main": [[{ "node": "Submit Login", "type": "main", "index": 0 }]]
+    },
+    "Submit Login": {
+      "main": [[{ "node": "Merge Cookies", "type": "main", "index": 0 }]]
+    },
+    "Merge Cookies": {
+      "main": [[{ "node": "Get Schedule Form", "type": "main", "index": 0 }]]
+    },
+    "Get Schedule Form": {
+      "main": [[{ "node": "Parse Form Options", "type": "main", "index": 0 }]]
+    },
+    "Parse Form Options": {
+      "main": [[{ "node": "Split Into Departments", "type": "main", "index": 0 }]]
+    },
+    "Split Into Departments": {
+      "main": [[{ "node": "Batch (8 parallel)", "type": "main", "index": 0 }]]
+    },
+    "Batch (8 parallel)": {
+      "main": [
+        [{ "node": "Fetch Schedule", "type": "main", "index": 0 }],
+        [{ "node": "Aggregate Results", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Schedule": {
+      "main": [[{ "node": "Parse Schedule HTML", "type": "main", "index": 0 }]]
+    },
+    "Parse Schedule HTML": {
+      "main": [[{ "node": "Batch (8 parallel)", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Results": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "instanceId": "sisia-scraper"
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "name": "AISIS Curriculum Scraper - All Degrees",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "scrape-curriculum",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://aisis.ateneo.edu/j_aisis/displayLogin.do",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "get-login-page",
+      "name": "Get Login Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.body || '';\nconst rndMatch = html.match(/name=[\"']rnd[\"']\\s+value=[\"']([^\"']+)[\"']/i) ||\n                 html.match(/value=[\"']([^\"']+)[\"']\\s+name=[\"']rnd[\"']/i);\n\nif (!rndMatch) throw new Error('Could not find rnd token');\n\nconst cookies = $input.first().json.headers?.['set-cookie'] || [];\nconst cookieString = Array.isArray(cookies) \n  ? cookies.map(c => c.split(';')[0]).join('; ')\n  : cookies.split(';')[0];\n\nreturn { rndToken: rndMatch[1], cookies: cookieString };"
+      },
+      "id": "extract-rnd",
+      "name": "Extract RND Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aisis.ateneo.edu/j_aisis/login.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Cookie", "value": "={{ $json.cookies }}" },
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "userName", "value": "={{ $env.AISIS_USERNAME }}" },
+            { "name": "password", "value": "={{ $env.AISIS_PASSWORD }}" },
+            { "name": "rnd", "value": "={{ $json.rndToken }}" },
+            { "name": "command", "value": "login" }
+          ]
+        },
+        "options": {
+          "redirect": { "redirect": { "followRedirects": false } },
+          "response": { "response": { "fullResponse": true } }
+        }
+      },
+      "id": "submit-login",
+      "name": "Submit Login",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevCookies = $('Extract RND Token').first().json.cookies || '';\nconst newCookies = $input.first().json.headers?.['set-cookie'] || [];\nlet allCookies = prevCookies;\nif (Array.isArray(newCookies)) {\n  allCookies = prevCookies + '; ' + newCookies.map(c => c.split(';')[0]).join('; ');\n}\nreturn { cookies: allCookies };"
+      },
+      "id": "merge-cookies",
+      "name": "Merge Cookies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://aisis.ateneo.edu/j_aisis/J_VOFC.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Cookie", "value": "={{ $json.cookies }}" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "fullResponse": true } }
+        }
+      },
+      "id": "get-curriculum-form",
+      "name": "Get Curriculum Form",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.body || '';\nconst cookies = $('Merge Cookies').first().json.cookies;\n\n// Extract degree codes from dropdown\nconst degreeRegex = /<option\\s+value=[\"']([^\"']+)[\"'][^>]*>([^<]+)<\\/option>/gi;\nconst selectMatch = html.match(/<select[^>]*name=[\"']degCode[\"'][^>]*>[\\s\\S]*?<\\/select>/i);\n\nconst degrees = [];\nif (selectMatch) {\n  let match;\n  while ((match = degreeRegex.exec(selectMatch[0])) !== null) {\n    if (match[1] && match[1] !== '') {\n      degrees.push({ code: match[1], name: match[2].trim() });\n    }\n  }\n}\n\nreturn {\n  cookies,\n  degrees,\n  degreeCount: degrees.length\n};"
+      },
+      "id": "parse-degrees",
+      "name": "Parse Degree Options",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { cookies, degrees } = $input.first().json;\n\n// Limit to first 50 degrees for testing (remove for full scrape)\nconst limitedDegrees = degrees.slice(0, 50);\n\nreturn limitedDegrees.map(deg => ({\n  json: {\n    cookies,\n    degCode: deg.code,\n    degName: deg.name\n  }\n}));"
+      },
+      "id": "split-degrees",
+      "name": "Split Into Degrees",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 4,
+        "options": {}
+      },
+      "id": "batch-requests",
+      "name": "Batch (4 parallel)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://aisis.ateneo.edu/j_aisis/J_VOFC.do",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Cookie", "value": "={{ $json.cookies }}" },
+            { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "degCode", "value": "={{ $json.degCode }}" },
+            { "name": "command", "value": "display" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-curriculum",
+      "name": "Fetch Curriculum",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data || $input.first().json.body || '';\nconst degCode = $json.degCode;\n\nconst courses = [];\nlet currentYear = 0;\nlet currentSem = 0;\n\n// Find year markers\nconst yearMatch = html.match(/(FIRST|SECOND|THIRD|FOURTH|FIFTH)\\s*YEAR/gi) || [];\n\n// Parse course rows from tables\nconst tableRegex = /<table[^>]*>[\\s\\S]*?<\\/table>/gi;\nconst tables = html.match(tableRegex) || [];\n\nfor (const table of tables) {\n  // Check for year/semester headers\n  const yearM = table.match(/(FIRST|SECOND|THIRD|FOURTH|FIFTH)\\s*YEAR/i);\n  if (yearM) {\n    const yearMap = { 'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5 };\n    currentYear = yearMap[yearM[1].toUpperCase()] || 0;\n  }\n  \n  const semM = table.match(/(FIRST|SECOND|SUMMER)\\s*SEMESTER/i);\n  if (semM) {\n    const semMap = { 'FIRST': 1, 'SECOND': 2, 'SUMMER': 0 };\n    currentSem = semMap[semM[1].toUpperCase()] || 0;\n  }\n  \n  const rows = table.match(/<tr[^>]*>[\\s\\S]*?<\\/tr>/gi) || [];\n  for (const row of rows) {\n    const cells = row.match(/<td[^>]*>([\\s\\S]*?)<\\/td>/gi) || [];\n    if (cells.length < 3) continue;\n    \n    const getText = (cell) => cell.replace(/<[^>]+>/g, '').trim();\n    const subjectCode = getText(cells[0]);\n    const title = getText(cells[1]);\n    const units = parseFloat(getText(cells[2])) || 0;\n    \n    if (!subjectCode || subjectCode.length < 2) continue;\n    if (subjectCode.toLowerCase().includes('cat') || subjectCode.toLowerCase().includes('code')) continue;\n    \n    courses.push({ degCode, subjectCode, title, units, year: currentYear, semester: currentSem });\n  }\n}\n\nreturn { degCode, courses, count: courses.length };"
+      },
+      "id": "parse-curriculum",
+      "name": "Parse Curriculum HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allCourses = [];\nconst degStats = {};\n\nfor (const item of $input.all()) {\n  const { degCode, courses, count } = item.json;\n  degStats[degCode] = count;\n  allCourses.push(...courses);\n}\n\nreturn {\n  totalCourses: allCourses.length,\n  degreeCount: Object.keys(degStats).length,\n  degStats,\n  courses: allCourses\n};"
+      },
+      "id": "aggregate",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, totalCourses: $json.totalCourses, degreeCount: $json.degreeCount }) }}"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2600, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Get Login Page", "type": "main", "index": 0 }]]
+    },
+    "Get Login Page": {
+      "main": [[{ "node": "Extract RND Token", "type": "main", "index": 0 }]]
+    },
+    "Extract RND Token": {
+      "main": [[{ "node": "Submit Login", "type": "main", "index": 0 }]]
+    },
+    "Submit Login": {
+      "main": [[{ "node": "Merge Cookies", "type": "main", "index": 0 }]]
+    },
+    "Merge Cookies": {
+      "main": [[{ "node": "Get Curriculum Form", "type": "main", "index": 0 }]]
+    },
+    "Get Curriculum Form": {
+      "main": [[{ "node": "Parse Degree Options", "type": "main", "index": 0 }]]
+    },
+    "Parse Degree Options": {
+      "main": [[{ "node": "Split Into Degrees", "type": "main", "index": 0 }]]
+    },
+    "Split Into Degrees": {
+      "main": [[{ "node": "Batch (4 parallel)", "type": "main", "index": 0 }]]
+    },
+    "Batch (4 parallel)": {
+      "main": [
+        [{ "node": "Fetch Curriculum", "type": "main", "index": 0 }],
+        [{ "node": "Aggregate Results", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Curriculum": {
+      "main": [[{ "node": "Parse Curriculum HTML", "type": "main", "index": 0 }]]
+    },
+    "Parse Curriculum HTML": {
+      "main": [[{ "node": "Batch (4 parallel)", "type": "main", "index": 0 }]]
+    },
+    "Aggregate Results": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
