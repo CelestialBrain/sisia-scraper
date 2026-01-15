@@ -86,22 +86,29 @@ async function main() {
       const courses = await scrapeAllCurriculaHTTP(session, degrees, {
         concurrency: 4,  // Lower for curriculum
         batchDelayMs: 1000,
+        onSave: (degree, courses) => {
+          // Save each degree's curriculum as it's scraped
+          db.saveCurriculumCourses(degree, courses);
+        }
       });
 
       totalCourses = courses.length;
-      console.log(`  Total curriculum courses: ${totalCourses}`);
     }
 
     // Print stats
+    const stats = db.getStats();
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
     console.log('\n' + '='.repeat(50));
     console.log('📊 Scraping Complete!');
     console.log('='.repeat(50));
-    console.log(`  Time elapsed:    ${elapsed}s`);
-    if (scrapeSchedule) console.log(`  Class sections:  ${totalSections}`);
-    if (scrapeCurriculum) console.log(`  Curriculum courses: ${totalCourses}`);
-    console.log(`  Database:        sisia.db`);
+    console.log(`  Time elapsed:      ${elapsed}s`);
+    console.log(`  Unique courses:    ${stats.courses}`);
+    console.log(`  Class sections:    ${stats.sections}`);
+    console.log(`  Degree programs:   ${stats.programs}`);
+    console.log(`  Instructors:       ${stats.instructors}`);
+    console.log(`  Rooms:             ${stats.rooms}`);
+    console.log(`  Database:          sisia.db`);
     console.log('='.repeat(50));
 
   } catch (error: any) {

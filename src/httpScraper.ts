@@ -123,6 +123,10 @@ function parseScheduleHTML(html: string, term: string, department: string): Clas
       
       // Parse schedule slots from time info
       const schedule = parseTimeSlots(timeInfo);
+      // Set room on each slot (room is in a separate column)
+      for (const slot of schedule) {
+        slot.room = room;
+      }
       
       const section: ClassSection = {
         id: `${term}-${subjectCode}-${sectionCode}`,
@@ -152,25 +156,45 @@ function parseScheduleHTML(html: string, term: string, department: string): Clas
 
 /**
  * Parse time slot string into structured data
- * Examples: "MWF 08:30-10:00 SEC A 301 (FULLY ONSITE)"
+ * AISIS format: "M-TH 0800-0930<br/>(FULLY ONSITE)" or "TF 0800-0930"
+ * Note: Days can be M-TH, T-F, M-W-F, etc.
  */
 function parseTimeSlots(timeInfo: string): ScheduleSlot[] {
   const slots: ScheduleSlot[] = [];
   
-  if (!timeInfo) return slots;
+  if (!timeInfo || timeInfo.trim() === '') return slots;
   
-  // Pattern: days time room (modality)
-  const pattern = /([MTWTHFSU]+)\s*(\d{1,2}:\d{2})-(\d{1,2}:\d{2})\s*([^(]*)\s*(\([^)]+\))?/gi;
-  let match;
+  // Split by <br/> or newlines to handle multiple time slots
+  const timeBlocks = timeInfo.split(/<br\s*\/?>/i).map(s => s.trim()).filter(s => s);
   
-  while ((match = pattern.exec(timeInfo)) !== null) {
-    const daysStr = match[1];
-    const startTime = match[2];
-    const endTime = match[3];
-    const room = match[4]?.trim() || '';
-    const modality = match[5]?.replace(/[()]/g, '') || 'ONSITE';
+  for (const block of timeBlocks) {
+    // Skip modality-only lines like "(FULLY ONSITE)"
+    if (block.startsWith('(') && block.endsWith(')')) continue;
     
-    // Expand days (M, T, W, TH, F, S)
+    // Pattern: days (like M-TH, TF, M-W-F) followed by time (0800-0930 or 08:00-09:30)
+    // Format: "[days] [start]-[end]" optionally followed by room and modality
+    const timeMatch = block.match(/^([MTWHFS-]+)\s+(\d{2}:?\d{2})-(\d{2}:?\d{2})/i);
+    
+    if (!timeMatch) continue;
+    
+    const daysStr = timeMatch[1].replace(/-/g, ''); // Remove dashes: M-TH -> MTH
+    const startRaw = timeMatch[2];
+    const endRaw = timeMatch[3];
+    
+    // Format time: 0800 -> 08:00
+    const startTime = startRaw.includes(':') ? startRaw : 
+      startRaw.slice(0, 2) + ':' + startRaw.slice(2);
+    const endTime = endRaw.includes(':') ? endRaw : 
+      endRaw.slice(0, 2) + ':' + endRaw.slice(2);
+    
+    // Extract modality from next block or same block
+    let modality = 'ONSITE';
+    const modalityMatch = timeInfo.match(/\(([^)]+)\)/);
+    if (modalityMatch) {
+      modality = modalityMatch[1].replace('FULLY ', '');
+    }
+    
+    // Expand days (MTH -> ['Monday', 'Thursday'], etc.)
     const days = expandDays(daysStr);
     
     for (const day of days) {
@@ -178,7 +202,7 @@ function parseTimeSlots(timeInfo: string): ScheduleSlot[] {
         day,
         startTime,
         endTime,
-        room,
+        room: '', // Room is in a separate column in AISIS
         modality,
       });
     }

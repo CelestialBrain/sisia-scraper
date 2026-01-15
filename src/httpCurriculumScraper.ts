@@ -139,6 +139,7 @@ function parseCurriculumHTML(html: string, degCode: string): CurriculumCourse[] 
 
 /**
  * Scrape all curricula with concurrent batching
+ * Uses onSave callback for incremental saving per degree program
  */
 export async function scrapeAllCurriculaHTTP(
   session: HTTPSession,
@@ -147,12 +148,14 @@ export async function scrapeAllCurriculaHTTP(
     concurrency?: number;
     batchDelayMs?: number;
     onProgress?: (deg: string, count: number) => void;
+    onSave?: (degree: DegreeProgram, courses: CurriculumCourse[]) => void;
   } = {}
 ): Promise<CurriculumCourse[]> {
   const { 
     concurrency = 4,  // Lower concurrency for curriculum (more complex pages)
     batchDelayMs = 500,
-    onProgress 
+    onProgress,
+    onSave 
   } = options;
   
   const limit = pLimit(concurrency);
@@ -167,6 +170,11 @@ export async function scrapeAllCurriculaHTTP(
       try {
         const courses = await scrapeCurriculumHTTP(session, deg.code);
         allCourses.push(...courses);
+        
+        // Save immediately if callback provided (for normalized schema)
+        if (onSave && courses.length > 0) {
+          onSave(deg, courses);
+        }
         
         if (onProgress) {
           onProgress(deg.code, courses.length);
