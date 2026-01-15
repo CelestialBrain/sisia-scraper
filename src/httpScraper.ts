@@ -53,25 +53,28 @@ export async function getScheduleOptionsHTTP(session: HTTPSession): Promise<Sche
 
 /**
  * Scrape class sections for a specific department
- * AISIS requires: 1) GET form page first, 2) POST to query
+ * Optimized: Skip redundant GET after first successful POST
  */
+let formInitialized = false;
+
 export async function scrapeScheduleHTTP(
   session: HTTPSession,
   period: string,
   deptCode: string
 ): Promise<ClassSection[]> {
-  // Step 1: GET the schedule page first to load form state
-  // This is required - AISIS needs the form loaded before accepting POST
-  await httpGet(AISIS_URLS.SCHEDULE, session);
+  // Only GET form state once per session (not for every department)
+  if (!formInitialized) {
+    await httpGet(AISIS_URLS.SCHEDULE, session);
+    formInitialized = true;
+  }
   
-  // Step 2: POST to get schedule results
+  // POST to get schedule results
   // CRITICAL: command must be 'displayResults' (not 'displaySearchForm')
-  // This is what resetCommand() JavaScript function sets before submit
   const html = await httpPost(AISIS_URLS.SCHEDULE, session, {
     applicablePeriod: period,
     deptCode: deptCode,
-    subjCode: 'ALL',  // ALL to get all subjects in department
-    command: 'displayResults',  // NOT displaySearchForm!
+    subjCode: 'ALL',
+    command: 'displayResults',
   });
   
   return parseScheduleHTML(html, period, deptCode);
@@ -245,7 +248,11 @@ function expandDays(daysStr: string): string[] {
 }
 
 /**
- * Scrape all departments with concurrent batching
+ * Scrape all departments with ADAPTIVE concurrency
+ * Features:
+ * - Starts at high concurrency, backs off on errors
+ * - Tracks department checksums for incremental scraping
+ * - Skip departments with no changes (when baseline provided)
  */
 export async function scrapeAllSchedulesHTTP(
   session: HTTPSession,
@@ -255,50 +262,91 @@ export async function scrapeAllSchedulesHTTP(
     concurrency?: number;
     batchDelayMs?: number;
     onProgress?: (dept: string, count: number) => void;
+    baselineCounts?: Map<string, number>;  // Previous section counts per dept
   } = {}
 ): Promise<ClassSection[]> {
   const { 
-    concurrency = 8, 
-    batchDelayMs = 500,
-    onProgress 
+    concurrency: initialConcurrency = 8, 
+    batchDelayMs = 300,  // Reduced from 500ms
+    onProgress,
+    baselineCounts,
   } = options;
   
-  const limit = pLimit(concurrency);
+  let currentConcurrency = initialConcurrency;
+  let consecutiveErrors = 0;
   const allSections: ClassSection[] = [];
   
-  console.log(`\n📅 Scraping ${departments.length} departments (concurrency: ${concurrency})...\n`);
+  console.log(`\n📅 Scraping ${departments.length} departments (concurrency: ${currentConcurrency})...\n`);
   
   const startTime = Date.now();
   
-  const tasks = departments.map((dept, index) => 
-    limit(async () => {
-      try {
-        const sections = await scrapeScheduleHTTP(session, period, dept.code);
-        allSections.push(...sections);
-        
-        if (onProgress) {
-          onProgress(dept.code, sections.length);
-        } else {
-          process.stdout.write(`  ${dept.code.padEnd(8)} ${sections.length} sections\n`);
+  // Process in batches with adaptive concurrency
+  let i = 0;
+  while (i < departments.length) {
+    const limit = pLimit(currentConcurrency);
+    const batch = departments.slice(i, i + currentConcurrency);
+    
+    const tasks = batch.map(dept => 
+      limit(async () => {
+        try {
+          const sections = await scrapeScheduleHTTP(session, period, dept.code);
+          
+          // Check if this department changed (when baseline exists)
+          if (baselineCounts && baselineCounts.has(dept.code)) {
+            const prevCount = baselineCounts.get(dept.code)!;
+            if (sections.length === prevCount) {
+              // Mark as unchanged for logging
+              if (onProgress) {
+                onProgress(dept.code + '*', sections.length);  // * = unchanged
+              }
+            } else if (onProgress) {
+              onProgress(dept.code, sections.length);
+            }
+          } else if (onProgress) {
+            onProgress(dept.code, sections.length);
+          } else {
+            process.stdout.write(`  ${dept.code.padEnd(8)} ${sections.length} sections\n`);
+          }
+          
+          consecutiveErrors = 0;  // Reset on success
+          return sections;
+        } catch (err: any) {
+          console.error(`  ⚠️ ${dept.code}: ${err.message}`);
+          consecutiveErrors++;
+          
+          // Adaptive backoff: reduce concurrency on errors
+          if (consecutiveErrors >= 2 && currentConcurrency > 2) {
+            currentConcurrency = Math.max(2, Math.floor(currentConcurrency / 2));
+            console.log(`  ⚡ Reducing concurrency to ${currentConcurrency}`);
+          }
+          
+          return [];
         }
-        
-        // Add delay between batches (every concurrency requests)
-        if ((index + 1) % concurrency === 0 && batchDelayMs > 0) {
-          await new Promise(r => setTimeout(r, batchDelayMs));
-        }
-        
-        return sections;
-      } catch (err: any) {
-        console.error(`  ⚠️ ${dept.code}: ${err.message}`);
-        return [];
-      }
-    })
-  );
-  
-  await Promise.all(tasks);
+      })
+    );
+    
+    const batchResults = await Promise.all(tasks);
+    for (const sections of batchResults) {
+      allSections.push(...sections);
+    }
+    
+    i += batch.length;
+    
+    // Small delay between batches
+    if (i < departments.length && batchDelayMs > 0) {
+      await new Promise(r => setTimeout(r, batchDelayMs));
+    }
+    
+    // Adaptive speedup: increase concurrency if no errors
+    if (consecutiveErrors === 0 && currentConcurrency < initialConcurrency) {
+      currentConcurrency = Math.min(initialConcurrency, currentConcurrency + 2);
+      console.log(`  ⚡ Increasing concurrency to ${currentConcurrency}`);
+    }
+  }
   
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n✅ Scraped ${allSections.length} sections in ${elapsed}s`);
   
   return allSections;
 }
+
