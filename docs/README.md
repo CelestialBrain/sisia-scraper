@@ -7,14 +7,15 @@ The SISIA (Student Information System Integration and Scraping Application) scra
 **Performance Stats (as of 2025-2 period):**
 | Metric | Value |
 |--------|-------|
-| **Class Sections** | 4,078 |
-| **Curriculum Courses** | 75,202 |
-| **Degree Programs** | 459 |
-| **Departments** | 44 |
-| Schedule scrape time | ~240 seconds |
-| Curriculum scrape time | ~76 minutes |
+| **Terms scraped** | 4 (2024-2, 2025-0/1/2) |
+| **Class Sections** | 11,528 |
+| **Unique Courses** | 2,381 |
+| **Instructors** | 1,688 |
+| **Rooms** | 310 |
+| **Hidden terms discovered** | 15 (2019-2023) |
+| Schedule scrape time | ~5s per term |
 | Concurrency | 8 parallel (schedule) / 4 parallel (curriculum) |
-| Database | SQLite (local) / Supabase (production) |
+| Database | SQLite (normalized with integer PKs) |
 
 ---
 
@@ -191,8 +192,17 @@ const BASELINES = {
 ## CLI Usage
 
 ```bash
-# Schedule only (default)
+# Current term only (default)
 npm run fast
+
+# ALL available terms (from dropdown)
+npm run fast -- --all-terms
+
+# Specific term
+npm run fast -- --term 2024-2
+
+# Discover hidden terms (2015-2027)
+npm run fast -- --discover
 
 # Curriculum only
 npm run fast -- --curriculum
@@ -202,32 +212,57 @@ npm run fast -- --all
 
 # With custom concurrency
 AISIS_CONCURRENCY=12 npm run fast
+```
 
-# With custom delay
-AISIS_BATCH_DELAY_MS=200 npm run fast
+**Output includes change tracking:**
+
+```
+📊 2025-2: +550 new, =3450 unchanged
+📈 Changes:
+   Inserted:       550
+   Updated:        0
+   Unchanged:      3450
+   Removed:        0
 ```
 
 ---
 
 ## Database Schema
 
-### SQLite (sisia.db)
+### Normalized Schema v2 (Integer PKs)
+
+**Lookup Tables:**
 
 - `departments` - Department codes and names
-- `class_sections` - Full schedule data with schedule slots
-- `schedule_slots` - Individual day/time/room entries
+- `terms` - Academic terms (2025-2, etc.) with year/semester
+- `instructors` - Deduplicated instructor names (1,688 unique)
+- `rooms` - Deduplicated room codes (310 unique)
+
+**Data Tables:**
+
+- `courses` - Unique course catalog (2,381 courses)
+- `class_sections` - Schedule offerings with FK references
+- `schedule_slots` - Day/time/room for each section
 - `degree_programs` - Curriculum program codes
 - `curriculum_courses` - Courses per degree program
+- `scrape_runs` - Metadata tracking per scrape session
 
-### Supabase (PostgreSQL)
+### Chatbot-Friendly Views
 
-Same schema, see `supabase/migrations/0001_initial_schema.sql`
+```sql
+-- "How many classes does Romina Yap have on Friday?"
+SELECT * FROM v_instructor_schedule
+WHERE instructor LIKE '%YAP%' AND day = 'Friday';
 
-Local Supabase runs on custom ports:
+-- "Where are Bio classes held?"
+SELECT room, SUM(slot_count) as total
+FROM v_course_rooms WHERE course_code LIKE 'BIO%'
+GROUP BY room ORDER BY total DESC;
 
-- API: http://127.0.0.1:54331
-- DB: postgresql://postgres:postgres@127.0.0.1:54332/postgres
-- Studio: http://127.0.0.1:54333
+-- "How many classes in 24-25?"
+SELECT term, section_count FROM v_term_summary
+WHERE year IN (2024, 2025);
+```
 
 ---
 

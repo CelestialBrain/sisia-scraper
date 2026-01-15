@@ -173,3 +173,90 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
 
 CREATE INDEX IF NOT EXISTS idx_scrape_runs_term ON scrape_runs(term_code);
 CREATE INDEX IF NOT EXISTS idx_scrape_runs_started ON scrape_runs(started_at);
+
+-- ============================================
+-- CHATBOT-FRIENDLY VIEWS
+-- ============================================
+
+-- Index for day-based queries ("Friday classes")
+CREATE INDEX IF NOT EXISTS idx_slots_day ON schedule_slots(day);
+
+-- Full schedule view with all details (for chatbot)
+CREATE VIEW IF NOT EXISTS v_full_schedule AS
+SELECT 
+  cs.id as section_id,
+  c.course_code,
+  c.title as course_title,
+  c.units,
+  cs.section,
+  i.name as instructor,
+  d.code as department,
+  t.code as term,
+  t.year as school_year,
+  t.semester,
+  ss.day,
+  ss.start_time,
+  ss.end_time,
+  r.code as room,
+  r.building,
+  ss.modality,
+  cs.max_capacity,
+  cs.free_slots,
+  cs.has_prerequisites
+FROM class_sections cs
+JOIN courses c ON cs.course_id = c.id
+JOIN terms t ON cs.term_id = t.id
+LEFT JOIN instructors i ON cs.instructor_id = i.id
+LEFT JOIN departments d ON cs.department_id = d.id
+LEFT JOIN schedule_slots ss ON ss.section_id = cs.id
+LEFT JOIN rooms r ON ss.room_id = r.id;
+
+-- Instructor schedule summary (for "how many classes does X have")
+CREATE VIEW IF NOT EXISTS v_instructor_schedule AS
+SELECT 
+  i.name as instructor,
+  t.code as term,
+  ss.day,
+  COUNT(DISTINCT cs.id) as class_count,
+  GROUP_CONCAT(DISTINCT c.course_code) as courses
+FROM class_sections cs
+JOIN courses c ON cs.course_id = c.id
+JOIN terms t ON cs.term_id = t.id
+JOIN instructors i ON cs.instructor_id = i.id
+JOIN schedule_slots ss ON ss.section_id = cs.id
+GROUP BY i.name, t.code, ss.day;
+
+-- Course room distribution (for "where are X classes held")
+CREATE VIEW IF NOT EXISTS v_course_rooms AS
+SELECT 
+  c.course_code,
+  c.title as course_title,
+  r.code as room,
+  r.building,
+  t.code as term,
+  COUNT(*) as slot_count
+FROM schedule_slots ss
+JOIN class_sections cs ON ss.section_id = cs.id
+JOIN courses c ON cs.course_id = c.id
+JOIN terms t ON cs.term_id = t.id
+JOIN rooms r ON ss.room_id = r.id
+GROUP BY c.course_code, r.code, t.code;
+
+-- Term summary (for "how many classes in 24-25")
+CREATE VIEW IF NOT EXISTS v_term_summary AS
+SELECT 
+  t.code as term,
+  t.year,
+  t.semester,
+  COUNT(DISTINCT cs.id) as section_count,
+  COUNT(DISTINCT c.id) as course_count,
+  COUNT(DISTINCT i.id) as instructor_count,
+  COUNT(DISTINCT r.id) as room_count
+FROM terms t
+LEFT JOIN class_sections cs ON cs.term_id = t.id
+LEFT JOIN courses c ON cs.course_id = c.id
+LEFT JOIN instructors i ON cs.instructor_id = i.id
+LEFT JOIN schedule_slots ss ON ss.section_id = cs.id
+LEFT JOIN rooms r ON ss.room_id = r.id
+GROUP BY t.id;
+
