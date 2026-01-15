@@ -165,29 +165,28 @@ const BASELINES = {
 
 ---
 
-## Possible Optimizations
+## Implemented Optimizations
 
-### 1. Speed Improvements
+### ✅ Speed Improvements (Implemented)
 
-| Change                        | Expected Impact | Risk               |
-| ----------------------------- | --------------- | ------------------ |
-| Increase concurrency to 12-16 | -30% time       | Rate limiting      |
-| Remove GET before POST        | -50% requests   | May break sessions |
-| Reduce batch delay to 200ms   | -30% time       | Server stress      |
-| Connection pooling            | -10% time       | Complexity         |
+| Optimization               | Result                                              |
+| -------------------------- | --------------------------------------------------- |
+| **Single GET per session** | 50% fewer requests (1 GET + 44 POST vs 88 requests) |
+| **Adaptive concurrency**   | Starts at 8, backs off on errors, recovers          |
+| **Reduced batch delay**    | 300ms between batches (was 500ms)                   |
+| **Normalized schema**      | Integer PKs, indexed FKs, 30% smaller DB            |
 
-### 2. Reliability Improvements
+### ✅ Reliability Improvements (Implemented)
 
-- **Retry with exponential backoff:** On 500 errors, wait 1s, 2s, 4s
-- **Circuit breaker:** If 5+ failures, pause 30s
-- **Session refresh:** Every 100 requests, re-authenticate
+- **Adaptive backoff:** On consecutive errors, reduce concurrency from 8 → 4 → 2
+- **Change tracking:** Detect insert/update/unchanged per scrape
+- **Scrape history:** `scrape_run` table logs all sessions
 
-### 3. Data Quality Improvements
+### ✅ Data Quality Improvements (Implemented)
 
-- Implement sanity checks from old repo
-- Add baseline tracking with JSON persistence
-- Validate subject prefixes match department
-- Save problematic HTML for debugging
+- **Deduplication:** Instructors, rooms, courses normalized
+- **FTS search:** Full-text search on course titles
+- **Chatbot views:** Pre-built views for common queries
 
 ---
 
@@ -273,11 +272,14 @@ WHERE year IN (2024, 2025);
 | File                           | Purpose                                       |
 | ------------------------------ | --------------------------------------------- |
 | `src/httpAuth.ts`              | Pure HTTP authentication with cookie chaining |
-| `src/httpScraper.ts`           | Schedule scraper with concurrent batching     |
+| `src/httpScraper.ts`           | Schedule scraper with adaptive concurrency    |
 | `src/httpCurriculumScraper.ts` | Curriculum scraper                            |
-| `src/fastScraper.ts`           | CLI entry point                               |
-| `src/db/database.ts`           | SQLite operations                             |
-| `src/db/schema.sql`            | SQLite schema                                 |
+| `src/fastScraper.ts`           | CLI entry point with multi-term support       |
+| `src/termDiscovery.ts`         | Hidden term discovery (2015-2027)             |
+| `src/db/database.ts`           | SQLite operations with change tracking        |
+| `src/db/schema.sql`            | Normalized SQLite schema                      |
+| `docs/DATABASE.md`             | **Database schema documentation**             |
+| `docs/AISIS_API.md`            | AISIS API documentation                       |
 | `supabase/migrations/*.sql`    | PostgreSQL migrations                         |
 
 ---
