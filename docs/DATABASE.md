@@ -237,12 +237,58 @@ WHERE course_fts MATCH 'mathematics';
 
 ## Statistics (January 2026)
 
-| Entity         | Count  |
-| -------------- | ------ |
-| Departments    | 44     |
-| Terms          | 4      |
-| Instructors    | 1,741  |
-| Rooms          | 315    |
-| Courses        | 2,470  |
-| Class Sections | 12,593 |
-| Schedule Slots | 13,956 |
+| Entity             | Count  |
+| ------------------ | ------ |
+| Departments        | 44     |
+| Terms              | 4      |
+| Instructors        | 1,741  |
+| Rooms              | 315    |
+| Courses            | 3,634  |
+| Class Sections     | 12,593 |
+| Schedule Slots     | 14,236 |
+| Degree Programs    | 459    |
+| Curriculum Courses | 14,828 |
+
+## AI Chatbot Functions
+
+The SISIA Chat API (`chat/server/api.ts`) provides 15 Gemini function-calling tools:
+
+### Basic Functions (8)
+
+| Function                  | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `search_courses`          | Search courses by keyword or code           |
+| `get_course_sections`     | Get all sections for a course               |
+| `get_instructor_schedule` | Get instructor's classes by day             |
+| `get_room_schedule`       | Get classes in a room                       |
+| `list_all_instructors`    | List instructors (optionally by department) |
+| `list_all_rooms`          | List all rooms                              |
+| `get_term_summary`        | Get term statistics                         |
+| `find_classes_by_time`    | Find classes by day/time                    |
+
+### Advanced Functions (4)
+
+| Function                    | Description                          |
+| --------------------------- | ------------------------------------ |
+| `get_room_weekly_grid`      | Weekly schedule grid for a room      |
+| `find_schedule_conflicts`   | Check if courses have time conflicts |
+| `get_instructor_load`       | Analyze instructor teaching hours    |
+| `find_available_time_slots` | Find when a room is free             |
+
+### Curriculum Functions (3)
+
+| Function                   | Description                                       |
+| -------------------------- | ------------------------------------------------- |
+| `get_curriculum`           | Get courses for a degree program by year/semester |
+| `list_degree_programs`     | Search degree programs                            |
+| `get_course_prerequisites` | Get prerequisites for a course                    |
+
+### Example Queries
+
+```
+"What time is MATH 30.13?"
+"Show me the weekly schedule for CTC 106"
+"What does Dr. Yap teach on Friday?"
+"What courses do BS CS freshmen take in first semester?"
+"Check if MATH 30.13 and CSCI 111 have conflicts"
+```
