@@ -72,14 +72,16 @@ const functions: FunctionDeclaration[] = [
     },
   },
   {
-    name: 'list_all_instructors',
-    description: 'Get a list of all instructors, optionally filtered by department.',
+    name: 'search_instructors',
+    description: 'Search for instructors by name. ALWAYS use this when user asks about a specific instructor. Returns matching instructors with similar names for fuzzy matching.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        department: { type: SchemaType.STRING, description: 'Department code like DISCS, MA' },
-        limit: { type: SchemaType.NUMBER, description: 'Max results (default 50)' },
+        name: { type: SchemaType.STRING, description: 'Instructor name to search for (partial match supported, e.g. "Yap", "Buenaflor", "Kath")' },
+        department: { type: SchemaType.STRING, description: 'Optional department filter like DISCS, MA, ENVI' },
+        limit: { type: SchemaType.NUMBER, description: 'Max results (default 20)' },
       },
+      required: ['name'],
     },
   },
   {
@@ -289,20 +291,68 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
       return { room: args.room_code, schedule: rows };
     }
     
-    case 'list_all_instructors': {
-      let sql = `SELECT i.name, d.code as department, COUNT(cs.id) as class_count
-                 FROM instructor i
-                 LEFT JOIN department d ON i.department_id = d.id
-                 LEFT JOIN class_section cs ON cs.instructor_id = i.id`;
-      const params: unknown[] = [];
+    case 'search_instructors': {
+      const searchName = args.name as string;
+      // Fuzzy matching: split search into parts and match any
+      const parts = searchName.toUpperCase().split(/\s+/);
+      
+      // Build fuzzy query - match if name contains ANY of the search parts
+      let sql = `
+        SELECT DISTINCT i.name, d.code as department, 
+               (SELECT COUNT(*) FROM class_section cs WHERE cs.instructor_id = i.id) as class_count,
+               (SELECT GROUP_CONCAT(DISTINCT c.course_code) FROM class_section cs2 
+                JOIN course c ON cs2.course_id = c.id WHERE cs2.instructor_id = i.id LIMIT 5) as courses
+        FROM instructor i
+        LEFT JOIN department d ON i.department_id = d.id
+        WHERE (${parts.map(() => 'UPPER(i.name) LIKE ?').join(' OR ')})
+      `;
+      
+      const params: unknown[] = parts.map(p => `%${p}%`);
+      
       if (args.department) {
-        sql += ` WHERE d.code = ?`;
+        sql += ` AND d.code = ?`;
         params.push(args.department);
       }
-      sql += ` GROUP BY i.id ORDER BY i.name LIMIT ?`;
+      
+      sql += ` ORDER BY i.name LIMIT ?`;
       params.push(limit);
-      const rows = db.prepare(sql).all(...params);
-      return { instructors: rows, total: rows.length };
+      
+      const rows = db.prepare(sql).all(...params) as Array<{name: string; department: string; class_count: number; courses: string}>;
+      
+      // If no exact matches, suggest alternatives
+      if (rows.length === 0) {
+        // Try soundex-like partial matching
+        const firstPart = parts[0]?.substring(0, 3) || '';
+        const altRows = db.prepare(`
+          SELECT name, 
+                 (SELECT GROUP_CONCAT(DISTINCT c.course_code) FROM class_section cs2 
+                  JOIN course c ON cs2.course_id = c.id WHERE cs2.instructor_id = i.id LIMIT 3) as courses
+          FROM instructor i
+          WHERE UPPER(i.name) LIKE ?
+          ORDER BY i.name LIMIT 10
+        `).all(`%${firstPart}%`) as Array<{name: string; courses: string}>;
+        
+        return { 
+          search: searchName,
+          found: false,
+          message: `No instructors found matching "${searchName}".`,
+          similar_names: altRows.map(r => ({ name: r.name, teaches: r.courses })),
+          suggestion: 'Try searching with just the last name (e.g., "Yap" instead of "Romina Yap")'
+        };
+      }
+      
+      return { 
+        search: searchName,
+        found: true,
+        instructors: rows.map(r => ({
+          name: r.name,
+          department: r.department || 'Unknown',
+          classes: r.class_count,
+          courses: r.courses?.split(',').slice(0, 5).join(', ') || 'None this term'
+        })),
+        total: rows.length,
+        note: rows.length >= limit ? `Showing first ${limit} results. Be more specific for better results.` : undefined
+      };
     }
     
     case 'list_all_rooms': {
@@ -634,16 +684,23 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
 // System prompt
 const SYSTEM_PROMPT = `You are SISIA Assistant, an AI helper for Ateneo students to query class schedules, courses, instructors, and rooms.
 
+CRITICAL RULES - DO NOT VIOLATE:
+1. NEVER make up data. ONLY use information returned from function calls.
+2. If a function returns empty results, say "I couldn't find..." - do NOT list random data.
+3. When user says "list them all" or similar, remember what they asked about previously and pass that as a filter.
+4. ALWAYS use search_instructors with the name parameter when looking for instructors.
+5. For partial names like "Kath", search for it as-is - the function does fuzzy matching.
+
 Current data: 2024-2025 academic year (terms 2024-2, 2025-0, 2025-1, 2025-2).
-Database has: ~12,500 class sections, 2,400+ courses, 1,700+ instructors, 300+ rooms.
+Database has: ~12,500 class sections, 3,600+ courses, 1,700+ instructors, 300+ rooms, 459 degree programs.
 
 When displaying results:
 - Format schedules as markdown tables when there are multiple entries
 - Show instructor names in "LASTNAME, FIRSTNAME" format
 - Include room codes and time slots
-- For large result sets, summarize and offer to show more
+- If function returns similar_names, present those as options to the user
 
-Be helpful, concise, and accurate. If you can't find something, suggest alternatives.`;
+Be helpful, concise, and accurate. When unsure, ask for clarification rather than guessing.`;
 
 // Chat endpoint
 app.post('/api/chat', async (req: Request, res: Response) => {
