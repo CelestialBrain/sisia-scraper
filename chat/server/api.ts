@@ -168,6 +168,44 @@ const functions: FunctionDeclaration[] = [
       required: ['room_code'],
     },
   },
+  // === CURRICULUM FUNCTIONS ===
+  {
+    name: 'get_curriculum',
+    description: 'Get the curriculum/course list for a specific degree program (e.g., BS CS, BS MIS, AB COM). Can filter by year and semester.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        program: { type: SchemaType.STRING, description: 'Degree program code like "BS CS", "BS MIS", "AB COM"' },
+        year: { type: SchemaType.NUMBER, description: 'Optional: year level (1, 2, 3, 4)' },
+        semester: { type: SchemaType.NUMBER, description: 'Optional: semester (1 or 2)' },
+        version: { type: SchemaType.STRING, description: 'Optional: curriculum version year like "2024", "2020"' },
+      },
+      required: ['program'],
+    },
+  },
+  {
+    name: 'list_degree_programs',
+    description: 'List all available degree programs in the database.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        search: { type: SchemaType.STRING, description: 'Optional: search filter like "Computer", "Engineering"' },
+        limit: { type: SchemaType.NUMBER, description: 'Max results (default 20)' },
+      },
+    },
+  },
+  {
+    name: 'get_course_prerequisites',
+    description: 'Get the prerequisites for a specific course.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        course_code: { type: SchemaType.STRING, description: 'Course code like CSCI 111' },
+        program: { type: SchemaType.STRING, description: 'Optional: degree program to check prerequisites in' },
+      },
+      required: ['course_code'],
+    },
+  },
 ];
 
 // Function handlers
@@ -504,6 +542,88 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
       }
       
       return { room: args.room_code, term, available_slots: available };
+    }
+    
+    // === CURRICULUM FUNCTION HANDLERS ===
+    
+    case 'get_curriculum': {
+      const programLike = `%${args.program}%`;
+      const versionLike = args.version ? `%${args.version}%` : '%';
+      
+      let sql = `
+        SELECT dp.code as program, dp.name as program_name, c.course_code, c.title,
+               cc.year, cc.semester, cc.prerequisites_raw as prerequisites
+        FROM curriculum_course cc
+        JOIN degree_program dp ON cc.degree_id = dp.id
+        JOIN course c ON cc.course_id = c.id
+        WHERE dp.code LIKE ? AND dp.code LIKE ?
+      `;
+      const params: unknown[] = [programLike, versionLike];
+      
+      if (args.year) {
+        sql += ` AND cc.year = ?`;
+        params.push(args.year);
+      }
+      if (args.semester) {
+        sql += ` AND cc.semester = ?`;
+        params.push(args.semester);
+      }
+      
+      sql += ` ORDER BY cc.year, cc.semester, c.course_code LIMIT 50`;
+      
+      const rows = db.prepare(sql).all(...params) as Array<{
+        program: string; program_name: string; course_code: string; 
+        title: string; year: number; semester: number; prerequisites: string;
+      }>;
+      
+      // Group by year and semester
+      const grouped: Record<string, typeof rows> = {};
+      for (const row of rows) {
+        const key = `Year ${row.year}, Semester ${row.semester}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(row);
+      }
+      
+      return { 
+        program: args.program,
+        program_name: rows[0]?.program_name || 'Unknown',
+        curriculum: grouped,
+        total_courses: rows.length
+      };
+    }
+    
+    case 'list_degree_programs': {
+      const searchLike = args.search ? `%${args.search}%` : '%';
+      const rows = db.prepare(`
+        SELECT code, name, 
+               (SELECT COUNT(*) FROM curriculum_course cc WHERE cc.degree_id = dp.id) as course_count
+        FROM degree_program dp
+        WHERE name LIKE ? OR code LIKE ?
+        ORDER BY code
+        LIMIT ?
+      `).all(searchLike, searchLike, limit) as Array<{code: string; name: string; course_count: number}>;
+      
+      return { programs: rows, total: rows.length };
+    }
+    
+    case 'get_course_prerequisites': {
+      const courseCode = args.course_code as string;
+      const rows = db.prepare(`
+        SELECT DISTINCT dp.code as program, c.course_code, cc.prerequisites_raw as prerequisites
+        FROM curriculum_course cc
+        JOIN degree_program dp ON cc.degree_id = dp.id
+        JOIN course c ON cc.course_id = c.id
+        WHERE c.course_code LIKE ?
+        AND cc.prerequisites_raw IS NOT NULL 
+        AND cc.prerequisites_raw != ''
+        LIMIT 10
+      `).all(`%${courseCode}%`) as Array<{program: string; course_code: string; prerequisites: string}>;
+      
+      if (rows.length === 0) {
+        return { course: courseCode, message: 'No prerequisite information found for this course' };
+      }
+      
+      return { course: courseCode, prerequisites: rows };
     }
     
     default:
