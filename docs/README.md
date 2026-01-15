@@ -4,12 +4,16 @@
 
 The SISIA (Student Information System Integration and Scraping Application) scraper is a high-performance HTTP-based data extraction tool for Ateneo's AISIS system. It uses pure HTTP requests with cookie-based session management to achieve **~30x faster** scraping compared to browser automation.
 
-**Performance Stats:**
+**Performance Stats (as of 2025-2 period):**
 | Metric | Value |
 |--------|-------|
-| Full schedule scrape (44 depts) | ~240 seconds |
-| Class sections | ~4,000+ |
-| Concurrency | 8 parallel requests |
+| **Class Sections** | 4,078 |
+| **Curriculum Courses** | 75,202 |
+| **Degree Programs** | 459 |
+| **Departments** | 44 |
+| Schedule scrape time | ~240 seconds |
+| Curriculum scrape time | ~76 minutes |
+| Concurrency | 8 parallel (schedule) / 4 parallel (curriculum) |
 | Database | SQLite (local) / Supabase (production) |
 
 ---
