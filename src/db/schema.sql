@@ -142,3 +142,34 @@ CREATE VIRTUAL TABLE IF NOT EXISTS courses_fts USING fts5(
 CREATE TRIGGER IF NOT EXISTS courses_ai AFTER INSERT ON courses BEGIN
   INSERT INTO courses_fts(rowid, course_code, title) VALUES (new.rowid, new.course_code, new.title);
 END;
+
+-- ============================================
+-- SCRAPE METADATA
+-- ============================================
+
+-- Scrape runs - track each scrape session
+CREATE TABLE IF NOT EXISTS scrape_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at DATETIME NOT NULL,
+  completed_at DATETIME,
+  term_code TEXT,
+  scrape_type TEXT NOT NULL, -- 'schedule', 'curriculum', 'all'
+  
+  -- Change counters
+  inserted INTEGER DEFAULT 0,
+  updated INTEGER DEFAULT 0,
+  unchanged INTEGER DEFAULT 0,
+  removed INTEGER DEFAULT 0,
+  
+  -- Totals
+  total_scraped INTEGER DEFAULT 0,
+  total_in_db INTEGER DEFAULT 0,
+  duration_ms INTEGER,
+  
+  -- Status
+  status TEXT DEFAULT 'running', -- 'running', 'completed', 'failed'
+  error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_term ON scrape_runs(term_code);
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_started ON scrape_runs(started_at);

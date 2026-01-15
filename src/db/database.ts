@@ -27,6 +27,28 @@ interface LookupCache {
   degreePrograms: Map<string, number>;
 }
 
+// Scrape statistics for change tracking
+export interface ScrapeStats {
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  total: number;
+}
+
+// Scrape run record
+export interface ScrapeRun {
+  id: number;
+  startedAt: Date;
+  completedAt?: Date;
+  termCode?: string;
+  scrapeType: 'schedule' | 'curriculum' | 'all';
+  stats: ScrapeStats;
+  durationMs?: number;
+  status: 'running' | 'completed' | 'failed';
+  errorMessage?: string;
+}
+
 export class SISIADatabase {
   private db: Database.Database;
   private cache: LookupCache;
@@ -474,6 +496,224 @@ export class SISIADatabase {
     `
       )
       .all(termCode);
+  }
+
+  // ============================================
+  // SCRAPE RUN TRACKING
+  // ============================================
+
+  /**
+   * Start a new scrape run and return its ID
+   */
+  startScrapeRun(termCode: string | null, scrapeType: 'schedule' | 'curriculum' | 'all'): number {
+    const result = this.db.prepare(`
+      INSERT INTO scrape_runs (started_at, term_code, scrape_type, status)
+      VALUES (datetime('now'), ?, ?, 'running')
+    `).run(termCode, scrapeType);
+    
+    return result.lastInsertRowid as number;
+  }
+
+  /**
+   * Complete a scrape run with final stats
+   */
+  endScrapeRun(
+    runId: number, 
+    stats: ScrapeStats, 
+    status: 'completed' | 'failed' = 'completed',
+    errorMessage?: string
+  ): void {
+    const startRow = this.db.prepare(
+      'SELECT started_at FROM scrape_runs WHERE id = ?'
+    ).get(runId) as { started_at: string } | undefined;
+    
+    const startedAt = startRow ? new Date(startRow.started_at) : new Date();
+    const durationMs = Date.now() - startedAt.getTime();
+    
+    this.db.prepare(`
+      UPDATE scrape_runs 
+      SET completed_at = datetime('now'),
+          inserted = ?, updated = ?, unchanged = ?, removed = ?,
+          total_scraped = ?, duration_ms = ?, status = ?, error_message = ?
+      WHERE id = ?
+    `).run(
+      stats.inserted, stats.updated, stats.unchanged, stats.removed,
+      stats.total, durationMs, status, errorMessage || null, runId
+    );
+  }
+
+  /**
+   * Get count of existing sections for a term (for change detection)
+   */
+  getExistingSectionKeys(termCode: string): Set<string> {
+    const termId = this.cache.terms.get(termCode);
+    if (!termId) return new Set();
+    
+    const rows = this.db.prepare(`
+      SELECT c.course_code, cs.section
+      FROM class_sections cs
+      JOIN courses c ON cs.course_id = c.id
+      WHERE cs.term_id = ?
+    `).all(termId) as { course_code: string; section: string }[];
+    
+    return new Set(rows.map(r => `${r.course_code}-${r.section}`));
+  }
+
+  /**
+   * Save class sections and return change stats
+   */
+  saveClassSectionsWithStats(sections: ClassSection[]): ScrapeStats {
+    const stats: ScrapeStats = { inserted: 0, updated: 0, unchanged: 0, removed: 0, total: sections.length };
+    
+    if (sections.length === 0) return stats;
+    
+    // Get existing section keys for this term
+    const termCode = sections[0].term;
+    const existingKeys = this.getExistingSectionKeys(termCode);
+    const newKeys = new Set<string>();
+    
+    const checkExistingStmt = this.db.prepare(`
+      SELECT cs.id, cs.max_capacity, cs.free_slots, i.name as instructor
+      FROM class_sections cs
+      JOIN courses c ON cs.course_id = c.id
+      JOIN terms t ON cs.term_id = t.id
+      LEFT JOIN instructors i ON cs.instructor_id = i.id
+      WHERE c.course_code = ? AND t.code = ? AND cs.section = ?
+    `);
+    
+    const sectionStmt = this.db.prepare(`
+      INSERT OR REPLACE INTO class_sections 
+        (course_id, term_id, instructor_id, department_id, section,
+         max_capacity, free_slots, lang, level, remarks, has_prerequisites)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const slotStmt = this.db.prepare(`
+      INSERT INTO schedule_slots (section_id, room_id, day, start_time, end_time, modality)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const deleteSlotsForSection = this.db.prepare(`
+      DELETE FROM schedule_slots WHERE section_id = ?
+    `);
+
+    const findSection = this.db.prepare(`
+      SELECT id FROM class_sections 
+      WHERE course_id = ? AND term_id = ? AND section = ?
+    `);
+
+    const transaction = this.db.transaction((sects: ClassSection[]) => {
+      for (const section of sects) {
+        const sectionKey = `${section.subjectCode}-${section.section}`;
+        newKeys.add(sectionKey);
+        
+        // Get/create all lookup IDs
+        const termId = this.getOrCreateTerm(section.term);
+        const deptId = section.department
+          ? this.getOrCreateDepartment(section.department, section.department)
+          : null;
+        const courseId = this.getOrCreateCourse(
+          section.subjectCode,
+          section.courseTitle,
+          section.units,
+          deptId
+        );
+        const instructorId = this.getOrCreateInstructor(section.instructor);
+        
+        // Check if section exists and if data changed
+        const existing = checkExistingStmt.get(section.subjectCode, section.term, section.section) as {
+          id: number; max_capacity: number; free_slots: number; instructor: string | null;
+        } | undefined;
+        
+        if (existing) {
+          // Check if anything changed
+          const hasChanged = existing.max_capacity !== section.maxCapacity ||
+                            existing.free_slots !== section.freeSlots ||
+                            existing.instructor !== section.instructor;
+          
+          if (hasChanged) {
+            stats.updated++;
+          } else {
+            stats.unchanged++;
+          }
+        } else {
+          stats.inserted++;
+        }
+
+        // Insert/update section
+        sectionStmt.run(
+          courseId,
+          termId,
+          instructorId,
+          deptId,
+          section.section,
+          section.maxCapacity,
+          section.freeSlots,
+          section.lang,
+          section.level,
+          section.remarks,
+          section.hasPrerequisites ? 1 : 0
+        );
+
+        // Get the section ID
+        const sectionRow = findSection.get(courseId, termId, section.section) as { id: number };
+        const sectionId = sectionRow.id;
+
+        // Clear old slots and insert new ones
+        deleteSlotsForSection.run(sectionId);
+        for (const slot of section.schedule) {
+          const roomId = this.getOrCreateRoom(slot.room);
+          slotStmt.run(
+            sectionId,
+            roomId,
+            slot.day,
+            slot.startTime,
+            slot.endTime,
+            slot.modality || "ONSITE"
+          );
+        }
+      }
+    });
+
+    transaction(sections);
+    
+    // Count removed sections (existed before but not in current scrape)
+    for (const key of existingKeys) {
+      if (!newKeys.has(key)) {
+        stats.removed++;
+      }
+    }
+    
+    return stats;
+  }
+
+  /**
+   * Get recent scrape runs
+   */
+  getRecentScrapeRuns(limit: number = 10): ScrapeRun[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM scrape_runs 
+      ORDER BY started_at DESC 
+      LIMIT ?
+    `).all(limit) as any[];
+    
+    return rows.map(r => ({
+      id: r.id,
+      startedAt: new Date(r.started_at),
+      completedAt: r.completed_at ? new Date(r.completed_at) : undefined,
+      termCode: r.term_code,
+      scrapeType: r.scrape_type,
+      stats: {
+        inserted: r.inserted || 0,
+        updated: r.updated || 0,
+        unchanged: r.unchanged || 0,
+        removed: r.removed || 0,
+        total: r.total_scraped || 0,
+      },
+      durationMs: r.duration_ms,
+      status: r.status,
+      errorMessage: r.error_message,
+    }));
   }
 
   /**
