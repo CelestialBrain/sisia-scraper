@@ -658,7 +658,8 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     
     const chat = model.startChat({
       history: history.map((msg: { role: string; content: string }) => ({
-        role: msg.role,
+        // Gemini uses 'model' instead of 'assistant'
+        role: msg.role === 'assistant' ? 'model' : msg.role,
         parts: [{ text: msg.content }],
       })),
     });
