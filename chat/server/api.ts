@@ -19,6 +19,90 @@ const db = new Database(path.join(__dirname, '../../sisia.db'), { readonly: true
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
+// === QUICK WIN HELPERS ===
+
+// 1. Course code normalization: "CSCI111" → "CSCI 111", "math30" → "MATH 30"
+function normalizeCourseCode(code: string): string {
+  const upper = code.toUpperCase().trim();
+  // Add space between letters and numbers if missing: CSCI111 → CSCI 111
+  return upper.replace(/([A-Z]+)(\d)/, '$1 $2');
+}
+
+// 2. Program aliases for common abbreviations
+const PROGRAM_ALIASES: Record<string, string[]> = {
+  'CS': ['CSCI', 'COMPUTER SCIENCE'],
+  'MIS': ['MANAGEMENT INFORMATION SYSTEMS'],
+  'ME': ['MANAGEMENT ENGINEERING'],
+  'MECH': ['MECHANICAL ENGINEERING'],  // Note: Ateneo doesn't have this
+  'ECE': ['ELECTRONICS AND COMMUNICATIONS ENGINEERING'],
+  'EcE': ['ELECTRONICS AND COMMUNICATIONS ENGINEERING'],
+  'COM': ['COMMUNICATION'],
+  'ECON': ['ECONOMICS', 'EC'],
+  'MATH': ['MATHEMATICS', 'MA'],
+  'PSYCH': ['PSYCHOLOGY', 'PS'],
+  'BIO': ['BIOLOGY'],
+  'CHEM': ['CHEMISTRY', 'CH'],
+  'MGT': ['MANAGEMENT'],
+  'ACCT': ['ACCOUNTANCY', 'ACC'],
+  'FIN': ['FINANCE', 'AMF'],
+};
+
+function expandProgramAlias(input: string): string {
+  const upper = input.toUpperCase().trim();
+  for (const [alias, expansions] of Object.entries(PROGRAM_ALIASES)) {
+    if (upper === alias || expansions.some(e => upper.includes(e))) {
+      return alias;
+    }
+  }
+  return upper;
+}
+
+// 3. Simple phonetic matching for typos (first 3-4 chars)
+function getSoundexPrefix(str: string): string {
+  return str.toUpperCase().replace(/[AEIOU]/g, '').substring(0, 4);
+}
+
+function fuzzyMatch(input: string, target: string): boolean {
+  const inputUpper = input.toUpperCase();
+  const targetUpper = target.toUpperCase();
+  
+  // Exact match
+  if (targetUpper.includes(inputUpper)) return true;
+  
+  // Soundex-like prefix match (handles typos like "Buenflor" for "Buenaflor")
+  if (getSoundexPrefix(input) === getSoundexPrefix(target.split(',')[0] || target)) {
+    return true;
+  }
+  
+  // Check individual words
+  const inputWords = inputUpper.split(/\s+/);
+  return inputWords.some(word => targetUpper.includes(word));
+}
+
+// 4. Term inference from natural language
+function inferTerm(input: string): string {
+  const lower = input.toLowerCase();
+  const currentYear = new Date().getFullYear();
+  
+  if (lower.includes('next sem') || lower.includes('next semester')) {
+    return '2025-2'; // 2nd sem 2025-2026
+  }
+  if (lower.includes('this sem') || lower.includes('current')) {
+    return '2025-2';
+  }
+  if (lower.includes('intersem') || lower.includes('summer')) {
+    return '2025-0';
+  }
+  if (lower.includes('first sem') || lower.includes('1st sem')) {
+    return `${currentYear}-1`;
+  }
+  if (lower.includes('second sem') || lower.includes('2nd sem')) {
+    return `${currentYear}-2`;
+  }
+  
+  return '2025-2'; // Default to current term
+}
+
 // Function definitions for Gemini
 const functions: FunctionDeclaration[] = [
   {
@@ -217,7 +301,11 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
   
   switch (name) {
     case 'search_courses': {
-      const query = `%${args.query}%`;
+      // Apply course code normalization (CSCI111 → CSCI 111)
+      const normalizedQuery = normalizeCourseCode(args.query as string);
+      const query = `%${normalizedQuery}%`;
+      const queryLower = `%${(args.query as string).toLowerCase()}%`;
+      
       const rows = db.prepare(`
         SELECT DISTINCT c.course_code, c.title, c.units, d.code as department,
                (SELECT COUNT(*) FROM class_section cs 
@@ -225,10 +313,10 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
                 WHERE cs.course_id = c.id AND t.code = ?) as section_count
         FROM course c
         LEFT JOIN department d ON c.department_id = d.id
-        WHERE c.course_code LIKE ? OR c.title LIKE ?
+        WHERE c.course_code LIKE ? OR c.course_code LIKE ? OR LOWER(c.title) LIKE ?
         ORDER BY c.course_code
         LIMIT ?
-      `).all(term, query, query, limit);
+      `).all(term, query, `%${args.query}%`, queryLower, limit);
       return { courses: rows, total: rows.length };
     }
     
@@ -319,24 +407,25 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
       
       const rows = db.prepare(sql).all(...params) as Array<{name: string; department: string; class_count: number; courses: string}>;
       
-      // If no exact matches, suggest alternatives
+      // If no exact matches, suggest alternatives using fuzzy matching
       if (rows.length === 0) {
-        // Try soundex-like partial matching
-        const firstPart = parts[0]?.substring(0, 3) || '';
-        const altRows = db.prepare(`
+        // Get all instructors and filter with fuzzyMatch for typo tolerance
+        const allInstructors = db.prepare(`
           SELECT name, 
                  (SELECT GROUP_CONCAT(DISTINCT c.course_code) FROM class_section cs2 
                   JOIN course c ON cs2.course_id = c.id WHERE cs2.instructor_id = i.id LIMIT 3) as courses
           FROM instructor i
-          WHERE UPPER(i.name) LIKE ?
-          ORDER BY i.name LIMIT 10
-        `).all(`%${firstPart}%`) as Array<{name: string; courses: string}>;
+          LIMIT 500
+        `).all() as Array<{name: string; courses: string}>;
+        
+        // Filter using fuzzy matching (handles typos like Buenflor → Buenaflor)
+        const fuzzyMatches = allInstructors.filter(i => fuzzyMatch(searchName, i.name)).slice(0, 10);
         
         return { 
           search: searchName,
           found: false,
           message: `No instructors found matching "${searchName}".`,
-          similar_names: altRows.map(r => ({ name: r.name, teaches: r.courses })),
+          similar_names: fuzzyMatches.map(r => ({ name: r.name, teaches: r.courses })),
           suggestion: 'Try searching with just the last name (e.g., "Yap" instead of "Romina Yap")'
         };
       }
@@ -597,18 +686,44 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
     // === CURRICULUM FUNCTION HANDLERS ===
     
     case 'get_curriculum': {
-      const programLike = `%${args.program}%`;
+      // Expand program alias (CS → CSCI, ME → Management Engineering)
+      const programSearch = expandProgramAlias(args.program as string);
+      const programLike = `%${programSearch}%`;
       const versionLike = args.version ? `%${args.version}%` : '%';
       
+      // First, find the exact degree program
+      const programMatch = db.prepare(`
+        SELECT code, name FROM degree_program 
+        WHERE code LIKE ? AND code LIKE ?
+        ORDER BY version_year DESC
+        LIMIT 1
+      `).get(programLike, versionLike) as {code: string; name: string} | null;
+      
+      if (!programMatch) {
+        // Suggest similar programs
+        const suggestions = db.prepare(`
+          SELECT DISTINCT code, name FROM degree_program 
+          WHERE code LIKE ? OR name LIKE ?
+          ORDER BY code LIMIT 10
+        `).all(`%${args.program}%`, `%${args.program}%`) as Array<{code: string; name: string}>;
+        
+        return {
+          found: false,
+          search: args.program,
+          message: `No program found matching "${args.program}".`,
+          suggestions: suggestions.map(s => ({ code: s.code.split('_')[0], name: s.name })),
+          hint: 'Try searching with full program name like "BS Management Engineering"'
+        };
+      }
+      
+      // Get ALL courses for this program (no limit)
       let sql = `
-        SELECT dp.code as program, dp.name as program_name, c.course_code, c.title,
-               cc.year, cc.semester, cc.prerequisites_raw as prerequisites
+        SELECT c.course_code, c.title, cc.year, cc.semester, cc.prerequisites_raw as prerequisites
         FROM curriculum_course cc
-        JOIN degree_program dp ON cc.degree_id = dp.id
         JOIN course c ON cc.course_id = c.id
-        WHERE dp.code LIKE ? AND dp.code LIKE ?
+        WHERE cc.degree_id = (SELECT id FROM degree_program WHERE code = ?)
       `;
-      const params: unknown[] = [programLike, versionLike];
+      const params: unknown[] = [programMatch.code];
       
       if (args.year) {
         sql += ` AND cc.year = ?`;
@@ -619,25 +734,40 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
         params.push(args.semester);
       }
       
-      sql += ` ORDER BY cc.year, cc.semester, c.course_code LIMIT 50`;
+      sql += ` ORDER BY cc.year, cc.semester, c.course_code`;
       
       const rows = db.prepare(sql).all(...params) as Array<{
-        program: string; program_name: string; course_code: string; 
-        title: string; year: number; semester: number; prerequisites: string;
+        course_code: string; title: string; year: number; semester: number; prerequisites: string;
       }>;
       
-      // Group by year and semester
-      const grouped: Record<string, typeof rows> = {};
+      // Group by year and semester with proper structure
+      const curriculum: Record<number, Record<number, Array<{code: string; title: string; prereqs?: string}>>> = {};
+      
       for (const row of rows) {
-        const key = `Year ${row.year}, Semester ${row.semester}`;
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(row);
+        if (!curriculum[row.year]) curriculum[row.year] = {};
+        if (!curriculum[row.year][row.semester]) curriculum[row.year][row.semester] = [];
+        curriculum[row.year][row.semester].push({
+          code: row.course_code,
+          title: row.title,
+          prereqs: row.prerequisites || undefined
+        });
+      }
+      
+      // Create summary per year
+      const summary: Record<string, number> = {};
+      for (const [year, semesters] of Object.entries(curriculum)) {
+        for (const [sem, courses] of Object.entries(semesters)) {
+          const key = `Year ${year} Sem ${sem}`;
+          summary[key] = (courses as Array<unknown>).length;
+        }
       }
       
       return { 
-        program: args.program,
-        program_name: rows[0]?.program_name || 'Unknown',
-        curriculum: grouped,
+        program_code: programMatch.code.split('_')[0],
+        program_name: programMatch.name,
+        version: programMatch.code,
+        curriculum,
+        summary,
         total_courses: rows.length
       };
     }
