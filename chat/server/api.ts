@@ -118,6 +118,56 @@ const functions: FunctionDeclaration[] = [
       required: ['day'],
     },
   },
+  // === ADVANCED FUNCTIONS ===
+  {
+    name: 'get_room_weekly_grid',
+    description: 'Get a complete weekly schedule grid for a room, organized by day (Monday-Saturday) and time slots. Perfect for room schedule displays.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        room_code: { type: SchemaType.STRING, description: 'Room code like CTC 106, SEC-A117' },
+        term: { type: SchemaType.STRING, description: 'Term code' },
+      },
+      required: ['room_code'],
+    },
+  },
+  {
+    name: 'find_schedule_conflicts',
+    description: 'Check if a set of courses have schedule conflicts (overlapping times). Input is a list of course codes.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        course_codes: { type: SchemaType.STRING, description: 'Comma-separated course codes to check, e.g. "MATH 30.13, CSCI 111, ENGL 11"' },
+        term: { type: SchemaType.STRING, description: 'Term code' },
+      },
+      required: ['course_codes'],
+    },
+  },
+  {
+    name: 'get_instructor_load',
+    description: 'Analyze an instructor\'s teaching load: total sections, class hours per week, unique courses, and busiest day.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        instructor_name: { type: SchemaType.STRING, description: 'Instructor name (partial match)' },
+        term: { type: SchemaType.STRING, description: 'Term code' },
+      },
+      required: ['instructor_name'],
+    },
+  },
+  {
+    name: 'find_available_time_slots',
+    description: 'Find time slots when a room is NOT occupied (available for booking or study).',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        room_code: { type: SchemaType.STRING, description: 'Room code' },
+        day: { type: SchemaType.STRING, description: 'Optional: specific day to check' },
+        term: { type: SchemaType.STRING, description: 'Term code' },
+      },
+      required: ['room_code'],
+    },
+  },
 ];
 
 // Function handlers
@@ -273,6 +323,187 @@ function handleFunctionCall(name: string, args: Record<string, unknown>): unknow
       params.push(limit);
       const rows = db.prepare(sql).all(...params);
       return { day: args.day, classes: rows };
+    }
+    
+    // === ADVANCED FUNCTION HANDLERS ===
+    
+    case 'get_room_weekly_grid': {
+      const rows = db.prepare(`
+        SELECT r.code as room, c.course_code, cs.section,
+               ss.day, ss.start_time, ss.end_time, i.name as instructor
+        FROM schedule_slot ss
+        JOIN room r ON ss.room_id = r.id
+        JOIN class_section cs ON ss.section_id = cs.id
+        JOIN course c ON cs.course_id = c.id
+        JOIN term t ON cs.term_id = t.id
+        LEFT JOIN instructor i ON cs.instructor_id = i.id
+        WHERE r.code LIKE ? AND t.code = ?
+        ORDER BY 
+          CASE ss.day 
+            WHEN 'Monday' THEN 1 
+            WHEN 'Tuesday' THEN 2 
+            WHEN 'Wednesday' THEN 3 
+            WHEN 'Thursday' THEN 4 
+            WHEN 'Friday' THEN 5 
+            WHEN 'Saturday' THEN 6 
+            ELSE 7 
+          END,
+          ss.start_time
+      `).all(`%${args.room_code}%`, term) as Array<{day: string; start_time: string; end_time: string; course_code: string; section: string; instructor: string}>;
+      
+      // Group by day
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const grid: Record<string, Array<{time: string; course: string; section: string; instructor: string}>> = {};
+      
+      for (const day of days) {
+        grid[day] = rows
+          .filter(r => r.day === day)
+          .map(r => ({
+            time: `${r.start_time}-${r.end_time}`,
+            course: r.course_code,
+            section: r.section,
+            instructor: r.instructor || 'TBA'
+          }));
+      }
+      
+      return { room: args.room_code, term, weekly_schedule: grid, total_slots: rows.length };
+    }
+    
+    case 'find_schedule_conflicts': {
+      const courseCodes = (args.course_codes as string).split(',').map(c => c.trim());
+      
+      // Get all schedule slots for requested courses
+      const placeholders = courseCodes.map(() => '?').join(',');
+      const rows = db.prepare(`
+        SELECT c.course_code, cs.section, ss.day, ss.start_time, ss.end_time
+        FROM schedule_slot ss
+        JOIN class_section cs ON ss.section_id = cs.id
+        JOIN course c ON cs.course_id = c.id
+        JOIN term t ON cs.term_id = t.id
+        WHERE c.course_code IN (${placeholders}) AND t.code = ?
+        ORDER BY c.course_code, ss.day, ss.start_time
+      `).all(...courseCodes, term) as Array<{course_code: string; section: string; day: string; start_time: string; end_time: string}>;
+      
+      // Find conflicts (same day, overlapping times)
+      const conflicts: Array<{course1: string; course2: string; day: string; time1: string; time2: string}> = [];
+      
+      for (let i = 0; i < rows.length; i++) {
+        for (let j = i + 1; j < rows.length; j++) {
+          const a = rows[i];
+          const b = rows[j];
+          
+          if (a.day === b.day && a.course_code !== b.course_code) {
+            // Check time overlap
+            if (a.start_time < b.end_time && b.start_time < a.end_time) {
+              conflicts.push({
+                course1: `${a.course_code} ${a.section}`,
+                course2: `${b.course_code} ${b.section}`,
+                day: a.day,
+                time1: `${a.start_time}-${a.end_time}`,
+                time2: `${b.start_time}-${b.end_time}`
+              });
+            }
+          }
+        }
+      }
+      
+      return { 
+        courses_checked: courseCodes, 
+        has_conflicts: conflicts.length > 0,
+        conflicts,
+        message: conflicts.length > 0 
+          ? `Found ${conflicts.length} schedule conflict(s)` 
+          : 'No conflicts found - these courses can be taken together'
+      };
+    }
+    
+    case 'get_instructor_load': {
+      const nameLike = `%${args.instructor_name}%`;
+      
+      // Get teaching stats
+      const stats = db.prepare(`
+        SELECT 
+          i.name as instructor,
+          COUNT(DISTINCT cs.id) as total_sections,
+          COUNT(DISTINCT c.id) as unique_courses,
+          SUM(
+            CASE 
+              WHEN ss.start_time IS NOT NULL AND ss.end_time IS NOT NULL 
+              THEN (CAST(SUBSTR(ss.end_time, 1, 2) AS INTEGER) * 60 + CAST(SUBSTR(ss.end_time, 3, 2) AS INTEGER)) -
+                   (CAST(SUBSTR(ss.start_time, 1, 2) AS INTEGER) * 60 + CAST(SUBSTR(ss.start_time, 3, 2) AS INTEGER))
+              ELSE 0 
+            END
+          ) / 60.0 as total_hours_per_week
+        FROM instructor i
+        JOIN class_section cs ON cs.instructor_id = i.id
+        JOIN course c ON cs.course_id = c.id
+        JOIN term t ON cs.term_id = t.id
+        LEFT JOIN schedule_slot ss ON ss.section_id = cs.id
+        WHERE i.name LIKE ? AND t.code = ?
+        GROUP BY i.id
+      `).get(nameLike, term) as {instructor: string; total_sections: number; unique_courses: number; total_hours_per_week: number} | null;
+      
+      if (!stats) {
+        return { error: 'Instructor not found' };
+      }
+      
+      // Get busiest day
+      const busyDay = db.prepare(`
+        SELECT ss.day, COUNT(*) as class_count
+        FROM instructor i
+        JOIN class_section cs ON cs.instructor_id = i.id
+        JOIN term t ON cs.term_id = t.id
+        JOIN schedule_slot ss ON ss.section_id = cs.id
+        WHERE i.name LIKE ? AND t.code = ?
+        GROUP BY ss.day
+        ORDER BY class_count DESC
+        LIMIT 1
+      `).get(nameLike, term) as {day: string; class_count: number} | null;
+      
+      return {
+        instructor: stats.instructor,
+        term,
+        total_sections: stats.total_sections,
+        unique_courses: stats.unique_courses,
+        hours_per_week: Math.round(stats.total_hours_per_week * 10) / 10,
+        busiest_day: busyDay?.day || 'N/A',
+        classes_on_busiest_day: busyDay?.class_count || 0
+      };
+    }
+    
+    case 'find_available_time_slots': {
+      // Get occupied slots
+      const rows = db.prepare(`
+        SELECT ss.day, ss.start_time, ss.end_time
+        FROM schedule_slot ss
+        JOIN room r ON ss.room_id = r.id
+        JOIN class_section cs ON ss.section_id = cs.id
+        JOIN term t ON cs.term_id = t.id
+        WHERE r.code LIKE ? AND t.code = ?
+        ORDER BY ss.day, ss.start_time
+      `).all(`%${args.room_code}%`, term) as Array<{day: string; start_time: string; end_time: string}>;
+      
+      // Standard time slots (7am to 9pm)
+      const allSlots = ['0700', '0830', '1000', '1130', '1300', '1430', '1600', '1730', '1900'];
+      const days = args.day ? [args.day] : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      
+      const available: Record<string, string[]> = {};
+      
+      for (const day of days) {
+        const occupiedTimes = rows
+          .filter(r => r.day === day)
+          .map(r => `${r.start_time}-${r.end_time}`);
+        
+        available[day] = allSlots.filter(slot => {
+          const slotEnd = String(parseInt(slot) + 130).padStart(4, '0');
+          return !occupiedTimes.some(occ => {
+            const [occStart, occEnd] = occ.split('-');
+            return slot < occEnd && slotEnd > occStart;
+          });
+        }).map(s => `${s}-${String(parseInt(s) + 130).padStart(4, '0')}`);
+      }
+      
+      return { room: args.room_code, term, available_slots: available };
     }
     
     default:
