@@ -233,19 +233,19 @@ AISIS_CONCURRENCY=12 npm run fast
 
 **Lookup Tables:**
 
-- `departments` - Department codes and names
-- `terms` - Academic terms (2025-2, etc.) with year/semester
-- `instructors` - Deduplicated instructor names (1,688 unique)
-- `rooms` - Deduplicated room codes (310 unique)
+- `department` - Department codes and names
+- `term` - Academic terms (2025-2, etc.) with year/semester
+- `instructor` - Deduplicated instructor names (1,688 unique)
+- `room` - Deduplicated room codes (310 unique)
 
 **Data Tables:**
 
-- `courses` - Unique course catalog (2,381 courses)
-- `class_sections` - Schedule offerings with FK references
-- `schedule_slots` - Day/time/room for each section
-- `degree_programs` - Curriculum program codes
-- `curriculum_courses` - Courses per degree program
-- `scrape_runs` - Metadata tracking per scrape session
+- `course` - Unique course catalog (2,381 courses)
+- `class_section` - Schedule offerings with FK references
+- `schedule_slot` - Day/time/room for each section
+- `degree_program` - Curriculum program codes
+- `curriculum_course` - Courses per degree program
+- `scrape_run` - Metadata tracking per scrape session
 
 ### Chatbot-Friendly Views
 

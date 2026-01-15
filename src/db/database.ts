@@ -92,7 +92,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM departments WHERE code = ?")
+      .prepare("SELECT id FROM department WHERE code = ?")
       .get(code) as { id: number } | undefined;
 
     if (existing) {
@@ -101,7 +101,7 @@ export class SISIADatabase {
     }
 
     const result = this.db
-      .prepare("INSERT INTO departments (code, name) VALUES (?, ?)")
+      .prepare("INSERT INTO department (code, name) VALUES (?, ?)")
       .run(code, name);
 
     const id = result.lastInsertRowid as number;
@@ -121,7 +121,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM instructors WHERE name = ?")
+      .prepare("SELECT id FROM instructor WHERE name = ?")
       .get(trimmed) as { id: number } | undefined;
 
     if (existing) {
@@ -130,7 +130,7 @@ export class SISIADatabase {
     }
 
     const result = this.db
-      .prepare("INSERT INTO instructors (name) VALUES (?)")
+      .prepare("INSERT INTO instructor (name) VALUES (?)")
       .run(trimmed);
 
     const id = result.lastInsertRowid as number;
@@ -150,7 +150,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM rooms WHERE code = ?")
+      .prepare("SELECT id FROM room WHERE code = ?")
       .get(trimmed) as { id: number } | undefined;
 
     if (existing) {
@@ -165,7 +165,7 @@ export class SISIADatabase {
 
     const result = this.db
       .prepare(
-        "INSERT INTO rooms (code, building, room_number) VALUES (?, ?, ?)"
+        "INSERT INTO room (code, building, room_number) VALUES (?, ?, ?)"
       )
       .run(trimmed, building, roomNumber);
 
@@ -183,7 +183,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM terms WHERE code = ?")
+      .prepare("SELECT id FROM term WHERE code = ?")
       .get(code) as { id: number } | undefined;
 
     if (existing) {
@@ -197,7 +197,7 @@ export class SISIADatabase {
     const semester = parseInt(semStr) || 0;
 
     const result = this.db
-      .prepare("INSERT INTO terms (code, year, semester) VALUES (?, ?, ?)")
+      .prepare("INSERT INTO term (code, year, semester) VALUES (?, ?, ?)")
       .run(code, year, semester);
 
     const id = result.lastInsertRowid as number;
@@ -219,7 +219,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM courses WHERE course_code = ?")
+      .prepare("SELECT id FROM course WHERE course_code = ?")
       .get(courseCode) as { id: number } | undefined;
 
     if (existing) {
@@ -229,7 +229,7 @@ export class SISIADatabase {
 
     const result = this.db
       .prepare(
-        "INSERT INTO courses (course_code, title, units, department_id) VALUES (?, ?, ?, ?)"
+        "INSERT INTO course (course_code, title, units, department_id) VALUES (?, ?, ?, ?)"
       )
       .run(courseCode, title, units, departmentId || null);
 
@@ -247,7 +247,7 @@ export class SISIADatabase {
     }
 
     const existing = this.db
-      .prepare("SELECT id FROM degree_programs WHERE code = ?")
+      .prepare("SELECT id FROM degree_program WHERE code = ?")
       .get(program.code) as { id: number } | undefined;
 
     if (existing) {
@@ -258,7 +258,7 @@ export class SISIADatabase {
     const result = this.db
       .prepare(
         `
-      INSERT INTO degree_programs 
+      INSERT INTO degree_program 
         (code, name, is_honors, track, specialization, version_year, version_semester)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `
@@ -301,23 +301,23 @@ export class SISIADatabase {
    */
   saveClassSections(sections: ClassSection[]): void {
     const sectionStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO class_sections 
+      INSERT OR REPLACE INTO class_section 
         (course_id, term_id, instructor_id, department_id, section,
          max_capacity, free_slots, lang, level, remarks, has_prerequisites)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const slotStmt = this.db.prepare(`
-      INSERT INTO schedule_slots (section_id, room_id, day, start_time, end_time, modality)
+      INSERT INTO schedule_slot (section_id, room_id, day, start_time, end_time, modality)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const deleteSlotsForSection = this.db.prepare(`
-      DELETE FROM schedule_slots WHERE section_id = ?
+      DELETE FROM schedule_slot WHERE section_id = ?
     `);
 
     const findSection = this.db.prepare(`
-      SELECT id FROM class_sections 
+      SELECT id FROM class_section 
       WHERE course_id = ? AND term_id = ? AND section = ?
     `);
 
@@ -389,7 +389,7 @@ export class SISIADatabase {
     const degreeId = this.getOrCreateDegreeProgram(degreeProgram);
 
     const curriculumStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO curriculum_courses 
+      INSERT OR REPLACE INTO curriculum_course 
         (degree_id, course_id, year, semester, prerequisites_raw, category)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
@@ -432,22 +432,22 @@ export class SISIADatabase {
   } {
     const sections = (
       this.db
-        .prepare("SELECT COUNT(*) as count FROM class_sections")
+        .prepare("SELECT COUNT(*) as count FROM class_section")
         .get() as any
     ).count;
     const courses = (
-      this.db.prepare("SELECT COUNT(*) as count FROM courses").get() as any
+      this.db.prepare("SELECT COUNT(*) as count FROM course").get() as any
     ).count;
     const programs = (
       this.db
-        .prepare("SELECT COUNT(*) as count FROM degree_programs")
+        .prepare("SELECT COUNT(*) as count FROM degree_program")
         .get() as any
     ).count;
     const instructors = (
-      this.db.prepare("SELECT COUNT(*) as count FROM instructors").get() as any
+      this.db.prepare("SELECT COUNT(*) as count FROM instructor").get() as any
     ).count;
     const rooms = (
-      this.db.prepare("SELECT COUNT(*) as count FROM rooms").get() as any
+      this.db.prepare("SELECT COUNT(*) as count FROM room").get() as any
     ).count;
     return { sections, courses, programs, instructors, rooms };
   }
@@ -459,9 +459,9 @@ export class SISIADatabase {
     return this.db
       .prepare(
         `
-      SELECT c.* FROM courses c
-      JOIN courses_fts fts ON c.id = fts.rowid
-      WHERE courses_fts MATCH ?
+      SELECT c.* FROM course c
+      JOIN course_fts fts ON c.id = fts.rowid
+      WHERE course_fts MATCH ?
       LIMIT ?
     `
       )
@@ -487,11 +487,11 @@ export class SISIADatabase {
         cs.max_capacity,
         cs.free_slots,
         cs.has_prerequisites
-      FROM class_sections cs
-      JOIN courses c ON cs.course_id = c.id
-      JOIN terms t ON cs.term_id = t.id
-      LEFT JOIN instructors i ON cs.instructor_id = i.id
-      LEFT JOIN departments d ON cs.department_id = d.id
+      FROM class_section cs
+      JOIN course c ON cs.course_id = c.id
+      JOIN term t ON cs.term_id = t.id
+      LEFT JOIN instructor i ON cs.instructor_id = i.id
+      LEFT JOIN department d ON cs.department_id = d.id
       WHERE t.code = ?
     `
       )
@@ -507,7 +507,7 @@ export class SISIADatabase {
    */
   startScrapeRun(termCode: string | null, scrapeType: 'schedule' | 'curriculum' | 'all'): number {
     const result = this.db.prepare(`
-      INSERT INTO scrape_runs (started_at, term_code, scrape_type, status)
+      INSERT INTO scrape_run (started_at, term_code, scrape_type, status)
       VALUES (datetime('now'), ?, ?, 'running')
     `).run(termCode, scrapeType);
     
@@ -524,14 +524,14 @@ export class SISIADatabase {
     errorMessage?: string
   ): void {
     const startRow = this.db.prepare(
-      'SELECT started_at FROM scrape_runs WHERE id = ?'
+      'SELECT started_at FROM scrape_run WHERE id = ?'
     ).get(runId) as { started_at: string } | undefined;
     
     const startedAt = startRow ? new Date(startRow.started_at) : new Date();
     const durationMs = Date.now() - startedAt.getTime();
     
     this.db.prepare(`
-      UPDATE scrape_runs 
+      UPDATE scrape_run 
       SET completed_at = datetime('now'),
           inserted = ?, updated = ?, unchanged = ?, removed = ?,
           total_scraped = ?, duration_ms = ?, status = ?, error_message = ?
@@ -551,8 +551,8 @@ export class SISIADatabase {
     
     const rows = this.db.prepare(`
       SELECT c.course_code, cs.section
-      FROM class_sections cs
-      JOIN courses c ON cs.course_id = c.id
+      FROM class_section cs
+      JOIN course c ON cs.course_id = c.id
       WHERE cs.term_id = ?
     `).all(termId) as { course_code: string; section: string }[];
     
@@ -574,31 +574,31 @@ export class SISIADatabase {
     
     const checkExistingStmt = this.db.prepare(`
       SELECT cs.id, cs.max_capacity, cs.free_slots, i.name as instructor
-      FROM class_sections cs
-      JOIN courses c ON cs.course_id = c.id
-      JOIN terms t ON cs.term_id = t.id
-      LEFT JOIN instructors i ON cs.instructor_id = i.id
+      FROM class_section cs
+      JOIN course c ON cs.course_id = c.id
+      JOIN term t ON cs.term_id = t.id
+      LEFT JOIN instructor i ON cs.instructor_id = i.id
       WHERE c.course_code = ? AND t.code = ? AND cs.section = ?
     `);
     
     const sectionStmt = this.db.prepare(`
-      INSERT OR REPLACE INTO class_sections 
+      INSERT OR REPLACE INTO class_section 
         (course_id, term_id, instructor_id, department_id, section,
          max_capacity, free_slots, lang, level, remarks, has_prerequisites)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const slotStmt = this.db.prepare(`
-      INSERT INTO schedule_slots (section_id, room_id, day, start_time, end_time, modality)
+      INSERT INTO schedule_slot (section_id, room_id, day, start_time, end_time, modality)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const deleteSlotsForSection = this.db.prepare(`
-      DELETE FROM schedule_slots WHERE section_id = ?
+      DELETE FROM schedule_slot WHERE section_id = ?
     `);
 
     const findSection = this.db.prepare(`
-      SELECT id FROM class_sections 
+      SELECT id FROM class_section 
       WHERE course_id = ? AND term_id = ? AND section = ?
     `);
 
@@ -692,7 +692,7 @@ export class SISIADatabase {
    */
   getRecentScrapeRuns(limit: number = 10): ScrapeRun[] {
     const rows = this.db.prepare(`
-      SELECT * FROM scrape_runs 
+      SELECT * FROM scrape_run 
       ORDER BY started_at DESC 
       LIMIT ?
     `).all(limit) as any[];
