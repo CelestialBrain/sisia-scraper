@@ -102,9 +102,12 @@ function findKeywordMatch(text: string, keywords: string[]): string | null {
 
 function extractEvidence(feedbackRows: FeedbackRow[], keywords: string[], maxEvidence: number = 2): Evidence[] {
   const evidence: Evidence[] = [];
+  const seenUrls = new Set<string>();
   
   for (const row of feedbackRows) {
     if (evidence.length >= maxEvidence) break;
+    // Skip if we already have evidence from this post
+    if (seenUrls.has(row.source_url)) continue;
     
     const matchedKeyword = findKeywordMatch(row.feedback_text, keywords);
     if (matchedKeyword) {
@@ -122,6 +125,7 @@ function extractEvidence(feedbackRows: FeedbackRow[], keywords: string[], maxEvi
         link: row.source_url,
         reactions: row.reactions
       });
+      seenUrls.add(row.source_url);
     }
   }
   
