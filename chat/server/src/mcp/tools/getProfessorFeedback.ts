@@ -3,6 +3,7 @@
  * 
  * Retrieves student feedback from the Facebook scraper database
  * with computed ratings based on comment keyword analysis.
+ * Includes evidence quotes with links to back up each rating.
  */
 
 import { SchemaType } from '@google/generative-ai';
@@ -19,29 +20,29 @@ const scraperDbPath = path.resolve(__dirname, '../../../../../sisia-scraper/data
 // Rating keywords derived from comment analysis (frequencies from 467 comments)
 const RATING_KEYWORDS = {
   // A-ability: likelihood of getting an A
-  a_able_positive: ['a-able', 'easy a', 'grades high', 'generous', 'curves', 'curve', 'lenient', 'high grades'],
-  a_able_negative: ['strict', 'hard', 'difficult', 'terror', 'mahirap', 'low grades', 'failed'],
+  a_able_positive: ['a-able', 'easy a', 'grades high', 'generous', 'curves', 'curve', 'lenient', 'high grades', 'gave me an a'],
+  a_able_negative: ['strict', 'terror', 'low grades', 'failed', 'f/d', 'will fail'],
   
   // Teaching quality
-  teaching_positive: ['goat', 'recommend', 'great teacher', 'explains well', 'learned a lot', 'interesting', 'engaging'],
-  teaching_negative: ['boring', 'confusing', 'avoid', 'worst', 'terrible', 'bad teacher'],
+  teaching_positive: ['goat', 'goated', 'recommend', 'great teacher', 'explains well', 'learned a lot', 'interesting', 'engaging', 'super good', 'blessing'],
+  teaching_negative: ['boring', 'confusing', 'avoid', 'worst', 'terrible', 'bad teacher', 'run away', 'run'],
   
   // Difficulty level
-  difficulty_easy: ['easy', 'chill', 'light', 'manageable', 'relaxed', 'not hard'],
-  difficulty_hard: ['hard', 'heavy', 'difficult', 'mahirap', 'challenging', 'demanding'],
+  difficulty_easy: ['easy', 'chill', 'light', 'manageable', 'relaxed', 'not hard', 'ez'],
+  difficulty_hard: ['hard', 'heavy', 'difficult', 'mahirap', 'challenging', 'demanding', 'tough'],
   
   // Workload
-  workload_heavy: ['heavy workload', 'many readings', 'lot of work', 'groupworks', 'many requirements', 'recitation'],
-  workload_light: ['light', 'manageable workload', 'few requirements', 'chill workload'],
+  workload_heavy: ['heavy workload', 'many readings', 'lot of work', 'groupworks', 'many requirements', 'recitation', 'readings'],
+  workload_light: ['light', 'manageable workload', 'few requirements', 'chill workload', 'no homework'],
   
   // Personality/fairness
-  personality_positive: ['nice', 'kind', 'fair', 'considerate', 'understanding', 'approachable'],
-  personality_negative: ['unfair', 'mean', 'rude', 'strict', 'intimidating']
+  personality_positive: ['nice', 'kind', 'fair', 'considerate', 'understanding', 'approachable', 'mother', 'caring'],
+  personality_negative: ['unfair', 'mean', 'rude', 'intimidating', 'scary']
 };
 
 export const definition = {
   name: 'get_professor_feedback',
-  description: 'Get student feedback and ratings for a professor from the Facebook scraper. Shows what students say about A-ability, teaching quality, difficulty, and workload. Use search_instructors first to verify the instructor name exists.',
+  description: 'Get student feedback and ratings for a professor from the Facebook scraper. Shows what students say about A-ability, teaching quality, difficulty, and workload. INCLUDES EVIDENCE QUOTES WITH POST LINKS to back up each rating.',
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
@@ -51,7 +52,7 @@ export const definition = {
       },
       limit: { 
         type: SchemaType.NUMBER, 
-        description: 'Max comments to return (default: 5, max: 10)' 
+        description: 'Max sample comments to return (default: 5, max: 10)' 
       },
     },
     required: ['professor_name'],
@@ -68,6 +69,50 @@ interface FeedbackRow {
 interface InstructorRow {
   name: string;
   section_count: number;
+}
+
+interface Evidence {
+  quote: string;
+  link: string;
+  reactions: number;
+}
+
+function findKeywordMatch(text: string, keywords: string[]): string | null {
+  const lowerText = text.toLowerCase();
+  for (const kw of keywords) {
+    if (lowerText.includes(kw.toLowerCase())) {
+      return kw;
+    }
+  }
+  return null;
+}
+
+function extractEvidence(feedbackRows: FeedbackRow[], keywords: string[], maxEvidence: number = 2): Evidence[] {
+  const evidence: Evidence[] = [];
+  
+  for (const row of feedbackRows) {
+    if (evidence.length >= maxEvidence) break;
+    
+    const matchedKeyword = findKeywordMatch(row.feedback_text, keywords);
+    if (matchedKeyword) {
+      // Extract a snippet around the keyword (max 150 chars)
+      const lowerText = row.feedback_text.toLowerCase();
+      const keywordIndex = lowerText.indexOf(matchedKeyword.toLowerCase());
+      const start = Math.max(0, keywordIndex - 40);
+      const end = Math.min(row.feedback_text.length, keywordIndex + matchedKeyword.length + 80);
+      let snippet = row.feedback_text.slice(start, end);
+      if (start > 0) snippet = '...' + snippet;
+      if (end < row.feedback_text.length) snippet = snippet + '...';
+      
+      evidence.push({
+        quote: snippet.trim(),
+        link: row.source_url,
+        reactions: row.reactions
+      });
+    }
+  }
+  
+  return evidence;
 }
 
 function countKeywords(text: string, keywords: string[]): number {
@@ -178,16 +223,38 @@ export function handler(args: { professor_name: string; limit?: number }) {
   const totalComments = feedbackRows.length;
   const sufficientData = totalComments >= 3;
 
-  // Get all comments for rating computation, but limit returned samples
+  // Get all comments for rating computation
   const allCommentTexts = feedbackRows.map(r => r.feedback_text);
+  
+  // Sample comments with links
   const sampleComments = feedbackRows.slice(0, limit).map(r => ({
-    text: r.feedback_text.length > 300 ? r.feedback_text.slice(0, 300) + '...' : r.feedback_text,
+    text: r.feedback_text.length > 200 ? r.feedback_text.slice(0, 200) + '...' : r.feedback_text,
     reactions: r.reactions,
-    source: r.source_url
+    post_link: r.source_url
   }));
 
   // Compute ratings from ALL comments
   const ratings = computeRatings(allCommentTexts);
+
+  // Extract EVIDENCE for each rating category
+  const evidence = {
+    a_able: ratings.a_able !== 'unknown' ? extractEvidence(
+      feedbackRows, 
+      ratings.a_able === 'likely' ? RATING_KEYWORDS.a_able_positive : RATING_KEYWORDS.a_able_negative
+    ) : [],
+    teaching: ratings.teaching !== 'unknown' ? extractEvidence(
+      feedbackRows,
+      ratings.teaching === 'positive' ? RATING_KEYWORDS.teaching_positive : RATING_KEYWORDS.teaching_negative
+    ) : [],
+    difficulty: ratings.difficulty !== 'unknown' ? extractEvidence(
+      feedbackRows,
+      ratings.difficulty === 'easy' ? RATING_KEYWORDS.difficulty_easy : RATING_KEYWORDS.difficulty_hard
+    ) : [],
+    workload: ratings.workload !== 'unknown' ? extractEvidence(
+      feedbackRows,
+      ratings.workload === 'light' ? RATING_KEYWORDS.workload_light : RATING_KEYWORDS.workload_heavy
+    ) : [],
+  };
 
   return {
     instructor: {
@@ -199,7 +266,7 @@ export function handler(args: { professor_name: string; limit?: number }) {
     feedback: {
       total_comments: totalComments,
       sufficient_data: sufficientData,
-      comments: sampleComments
+      sample_comments: sampleComments
     },
     ratings: sufficientData ? {
       a_able: ratings.a_able,
@@ -209,10 +276,10 @@ export function handler(args: { professor_name: string; limit?: number }) {
       personality: ratings.personality,
       sample_size: totalComments,
       confidence: ratings.confidence,
-      _note: 'Ratings computed from student comment keywords. Use with discretion.'
     } : null,
+    evidence: sufficientData ? evidence : null,
     _format_hint: totalComments > 0 
-      ? `Found ${totalComments} student comments about ${profName}. Summarize the feedback and ratings in a helpful way.`
+      ? `Found ${totalComments} student comments about ${profName}. Present ratings WITH the evidence quotes and links to back them up. Be specific and cite sources.`
       : `No feedback found for "${profName}". Suggest the user check the spelling or try a different name.`
   };
 }
