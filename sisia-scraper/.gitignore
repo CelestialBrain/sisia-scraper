@@ -1,0 +1,17 @@
+# sisia-scraper
+
+# Dependencies
+node_modules/
+dist/
+
+# Data (contains scraped data, don't commit)
+data/sessions/
+data/exports/
+data/raw/
+*.db
+
+# Environment
+.env
+
+# OS
+.DS_Store
