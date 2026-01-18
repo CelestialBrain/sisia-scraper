@@ -37,7 +37,20 @@ const RATING_KEYWORDS = {
   
   // Personality/fairness
   personality_positive: ['nice', 'kind', 'fair', 'considerate', 'understanding', 'approachable', 'mother', 'caring'],
-  personality_negative: ['unfair', 'mean', 'rude', 'intimidating', 'scary']
+  personality_negative: ['unfair', 'mean', 'rude', 'intimidating', 'scary'],
+  
+  // Assessment types mentioned
+  assessments: ['quiz', 'quizzes', 'oral', 'oral exam', 'paper', 'papers', 'groupwork', 'group work', 'project', 'projects', 'readings', 'recitation', 'exam', 'exams', 'homework', 'presentation'],
+  
+  // Deadline/late submission policy
+  late_strict: ['strict deadline', 'no late', 'zero late', 'deduction', 'points off', 'strict sa deadline'],
+  late_lenient: ['extension', 'flexible', 'accepts late', 'understanding', 'lenient deadline', 'deadline extensions'],
+  
+  // Red flags - warning signs
+  red_flags: ['racist', 'sexist', 'rude', 'mean', 'unfair', 'favorites', 'playing favorites', 'biased', 'terror', 'wag', 'run', 'run away', 'avoid', 'worst prof', 'crammer', 'no consultation'],
+  
+  // Tips keywords (to find advice comments)
+  tips: ['tip', 'tips', 'advice', 'recommend', 'suggestion', 'make sure', 'dont', "don't", 'you should', 'just follow', 'rubric']
 };
 
 export const definition = {
@@ -256,6 +269,28 @@ export function handler(args: { professor_name: string; limit?: number }) {
     ) : [],
   };
 
+  // Extract DETAILED TRAITS
+  const allText = allCommentTexts.join(' ').toLowerCase();
+  
+  // Find assessment types mentioned
+  const assessmentTypes: string[] = [];
+  for (const kw of RATING_KEYWORDS.assessments) {
+    if (allText.includes(kw.toLowerCase()) && !assessmentTypes.includes(kw)) {
+      assessmentTypes.push(kw);
+    }
+  }
+  
+  // Determine late policy
+  const lateStrict = countKeywords(allText, RATING_KEYWORDS.late_strict);
+  const lateLenient = countKeywords(allText, RATING_KEYWORDS.late_lenient);
+  const latePolicy = lateStrict > lateLenient ? 'strict' : lateLenient > 0 ? 'lenient' : 'unknown';
+  
+  // Find red flags with evidence
+  const redFlags = extractEvidence(feedbackRows, RATING_KEYWORDS.red_flags, 3);
+  
+  // Find tips/advice with evidence  
+  const tips = extractEvidence(feedbackRows, RATING_KEYWORDS.tips, 3);
+
   return {
     instructor: {
       name: instructorCheck?.name || profName,
@@ -277,9 +312,20 @@ export function handler(args: { professor_name: string; limit?: number }) {
       sample_size: totalComments,
       confidence: ratings.confidence,
     } : null,
+    details: sufficientData ? {
+      assessment_types: assessmentTypes.length > 0 ? assessmentTypes : ['unknown'],
+      late_policy: latePolicy,
+      late_evidence: latePolicy !== 'unknown' ? extractEvidence(
+        feedbackRows, 
+        latePolicy === 'strict' ? RATING_KEYWORDS.late_strict : RATING_KEYWORDS.late_lenient, 
+        1
+      ) : [],
+      red_flags: redFlags,
+      tips: tips
+    } : null,
     evidence: sufficientData ? evidence : null,
     _format_hint: totalComments > 0 
-      ? `Found ${totalComments} student comments about ${profName}. Present ratings WITH the evidence quotes and links to back them up. Be specific and cite sources.`
+      ? `Found ${totalComments} student comments about ${profName}. Present: 1) Ratings with evidence, 2) Assessment types, 3) Late policy, 4) Any red flags, 5) Student tips. ALWAYS cite the Facebook links as sources.`
       : `No feedback found for "${profName}". Suggest the user check the spelling or try a different name.`
   };
 }
