@@ -36,8 +36,23 @@ import * as findCoursesWithoutPrereqs from './findCoursesWithoutPrereqs.js';
 import * as getRestrictedSections from './getRestrictedSections.js';
 import * as getTimeSlotStats from './getTimeSlotStats.js';
 import * as searchPECourses from './searchPECourses.js';
+import * as getRoomStats from './getRoomStats.js';
+// Phase 3 new tools
+import * as compareInstructors from './compareInstructors.js';
+import * as calculateGpa from './calculateGpa.js';
+import * as exportScheduleIcal from './exportScheduleIcal.js';
+import * as findScheduleGaps from './findScheduleGaps.js';
+import * as getEnrollmentStats from './getEnrollmentStats.js';
+// Handbook-based tools
+import * as getGradingSystem from './getGradingSystem.js';
+import * as getQpiRequirements from './getQpiRequirements.js';
+import * as getHonorsRequirements from './getHonorsRequirements.js';
+import * as searchRules from './searchRules.js';
+import * as getCodeOfConduct from './getCodeOfConduct.js';
 // Professor feedback from Facebook scraper
 import * as getProfessorFeedback from './getProfessorFeedback.js';
+// Catch-all for general queries
+import * as generalChat from './generalChat.js';
 
 // Personal tools (auth required, encrypted credentials)
 import * as getMySchedule from './getMySchedule.js';
@@ -45,6 +60,7 @@ import * as getMyIPS from './getMyIPS.js';
 import * as getMyGrades from './getMyGrades.js';
 import * as getMyHoldOrders from './getMyHoldOrders.js';
 import * as getMyEnrolledClasses from './getMyEnrolledClasses.js';
+import * as getSyllabus from './getSyllabus.js';
 
 // Public tools (no authentication required)
 const publicTools = [
@@ -76,8 +92,23 @@ const publicTools = [
   getRestrictedSections,
   getTimeSlotStats,
   searchPECourses,
+  getRoomStats,
+  // Phase 3 new tools  
+  compareInstructors,
+  calculateGpa,
+  exportScheduleIcal,
+  findScheduleGaps,
+  getEnrollmentStats,
   // Community feedback
   getProfessorFeedback,
+  // Handbook-based tools
+  getGradingSystem,
+  getQpiRequirements,
+  getHonorsRequirements,
+  searchRules,
+  getCodeOfConduct,
+  // Catch-all tool
+  generalChat,
 ];
 
 // Personal tools (require authentication + linked AISIS)
@@ -87,6 +118,7 @@ const personalTools = [
   getMyGrades,
   getMyHoldOrders,
   getMyEnrolledClasses,
+  getSyllabus,
 ];
 
 // All tools

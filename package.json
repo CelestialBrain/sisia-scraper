@@ -1,7 +1,7 @@
 {
-  "name": "sisia-scraper",
+  "name": "sisia-chat",
   "version": "1.0.0",
-  "description": "High-performance AISIS course data scraper",
+  "description": "SISIA - Ateneo Schedule Assistant AI Chatbot",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -11,7 +11,12 @@
     "scrape:schedule": "tsx src/index.ts --schedule",
     "scrape:curriculum": "tsx src/index.ts --curriculum",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "server": "cd chat && npm run server",
+    "supabase:start": "supabase start",
+    "dev": "lsof -ti:6101,6102 | xargs kill -9 2>/dev/null; supabase start && cd chat && npm run start",
+    "dev:chat": "cd chat && npm run start",
+    "start": "cd chat && npm run start"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",

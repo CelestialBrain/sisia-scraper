@@ -1,0 +1,39 @@
+{
+  "latin_honors": {
+    "Summa Cum Laude": {
+      "min_qpi": 3.87,
+      "description": "Highest distinction for graduating students"
+    },
+    "Magna Cum Laude": {
+      "min_qpi": 3.70,
+      "description": "High distinction for graduating students"
+    },
+    "Cum Laude": {
+      "min_qpi": 3.35,
+      "description": "Distinction for graduating students"
+    }
+  },
+  "semestral_honors": {
+    "First Honors": {
+      "criteria": "Top 5% of the college based on semestral QPI",
+      "min_units": 15,
+      "other_requirements": "No failing grades, no INC, no disciplinary cases"
+    },
+    "Second Honors": {
+      "criteria": "Top 10% of the college based on semestral QPI",
+      "min_units": 15,
+      "other_requirements": "No failing grades, no INC, no disciplinary cases"
+    }
+  },
+  "deans_lister": {
+    "description": "Recognition for students who achieve semestral honors",
+    "benefits": "Listed in the Dean's List posted by the school"
+  },
+  "eligibility_notes": [
+    "Honors are based on cumulative QPI at time of graduation",
+    "Students must complete degree within prescribed period",
+    "No major disciplinary sanctions",
+    "Full-time enrollment required for semestral honors"
+  ],
+  "source": "Ateneo College Student Handbook Vol 1, 2025 Edition"
+}

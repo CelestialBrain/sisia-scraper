@@ -167,3 +167,92 @@ No explicit rate limiting detected, but recommended:
 - 200ms delay between requests
 - Max 10 concurrent requests
 - Fresh session per scrape run
+
+---
+
+## Personal Endpoints (Authentication Required)
+
+### My Currently Enrolled Classes (J_VCEC.do) ⭐
+
+**Best source for instructor names!**
+
+```
+GET /j_aisis/J_VCEC.do
+```
+
+**Response Table Columns:**
+| Column | Example | Notes |
+|--------|---------|-------|
+| Subject Code | `LLAW 11312018` | Includes term suffix |
+| Section | `UV1A` | |
+| Delivery Mode | `FULLY ONSITE` | |
+| Course Title | `OBLIGATIONS AND CONTRACTS` | |
+| **Instructor** | `Eirene Jhone AGUILA` | **Key data!** |
+| Class Beadle | | Optional link |
+
+**Course Code Format:**
+
+```
+LLAW 11312018
+│    │  └── Term suffix (12018 = 1st sem 2018-2019)
+│    └── Catalog number (113)
+└── Subject (LLAW)
+```
+
+### My Class Schedule (J_VMCS.do)
+
+Weekly schedule grid with times and rooms.
+
+```
+GET /j_aisis/J_VMCS.do
+```
+
+**Response:** HTML table with weekly grid showing time slots per day.
+
+**Note:** Does NOT include instructor names - use J_VCEC.do instead.
+
+### Grades (J_VG.do)
+
+```
+GET /j_aisis/J_VG.do
+```
+
+Returns student's grades by term.
+
+**Columns:** School Year, Sem, Course, Subject Code, Course Title, Units, Final Grade
+
+### Individual Program of Study (J_VIPS.do)
+
+```
+GET /j_aisis/J_VIPS.do
+```
+
+Returns student's course progress.
+
+**Status Codes:**
+| Code | Meaning | Title Attribute |
+|------|---------|-----------------|
+| P | Passed | "Passed" |
+| C | Currently Taking | "Currently Taking" |
+| N | Not Yet Taken | "Not Yet Taken" |
+
+### Hold Orders (J_VHOR.do)
+
+```
+GET /j_aisis/J_VHOR.do
+```
+
+Returns any hold orders preventing enrollment.
+
+---
+
+## Session Caching
+
+Personal endpoints use cached sessions (30-min TTL) to avoid repeated logins:
+
+```typescript
+// First request: Login + cache session
+// Subsequent requests (within 30 min): Reuse cached session
+```
+
+This saves 2-3 seconds per personal query.

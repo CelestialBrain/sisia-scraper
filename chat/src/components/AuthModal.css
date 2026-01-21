@@ -1,0 +1,253 @@
+/**
+ * Auth Modal Styles
+ * 
+ * Design: Modern Swiss + AISIS Nostalgia
+ * - AISIS light blue backgrounds
+ * - Dark blue headers (like AISIS nav)
+ * - Yellow/gold accents
+ * - Clean rounded Swiss typography
+ */
+
+/* Overlay */
+.auth-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 51, 102, 0.5); /* AISIS dark blue tint */
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal */
+.auth-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 20px 40px rgba(0, 51, 102, 0.2);
+  position: relative;
+  animation: slideUp 0.3s ease-out;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header - AISIS inspired dark blue */
+.auth-modal-header {
+  background: linear-gradient(135deg, #003366 0%, #004080 100%);
+  padding: 2rem;
+  text-align: center;
+  color: white;
+}
+
+.auth-modal-logo {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.auth-modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.auth-modal-header p {
+  margin: 0.5rem 0 0;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+/* Form */
+.auth-form {
+  padding: 1.5rem 2rem;
+}
+
+.auth-field {
+  margin-bottom: 1.25rem;
+}
+
+.auth-field label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #003366;
+}
+
+.auth-field input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e0e7ef;
+  border-radius: 10px;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  background: #f8fafc;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: #003366;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(0, 51, 102, 0.1);
+}
+
+.auth-field input::placeholder {
+  color: #94a3b8;
+}
+
+/* Submit Button - AISIS yellow/gold accent */
+.auth-submit {
+  width: 100%;
+  padding: 0.875rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 0.5rem;
+}
+
+.auth-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.auth-submit:active {
+  transform: translateY(0);
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* AISIS-specific submit button */
+.aisis-submit {
+  background: linear-gradient(135deg, #003366 0%, #004080 100%);
+}
+
+.aisis-submit:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(0, 51, 102, 0.4);
+}
+
+/* Error */
+.auth-error {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  border: 1px solid #fecaca;
+}
+
+/* Footer */
+.auth-footer {
+  padding: 1rem 2rem 1.5rem;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.9rem;
+  border-top: 1px solid #e0e7ef;
+  background: #f8fafc;
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: #003366;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 0.25rem;
+  text-decoration: underline;
+}
+
+.auth-link:hover {
+  color: #004080;
+}
+
+/* Close button */
+.auth-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.auth-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* AISIS Link specific styles */
+.aisis-security-notice {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+  border-bottom: 1px solid #bae6fd;
+}
+
+.aisis-security-notice .security-icon {
+  font-size: 1.5rem;
+}
+
+.aisis-security-notice strong {
+  color: #003366;
+  font-size: 0.9rem;
+  display: block;
+}
+
+.aisis-security-notice p {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: #0369a1;
+}
+
+.aisis-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.aisis-footer small {
+  color: #64748b;
+}
+
+.blocked-notice {
+  color: #dc2626 !important;
+}

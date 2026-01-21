@@ -1,0 +1,76 @@
+{
+  "grades": {
+    "A": {
+      "points": 4.0,
+      "description": "Excellent performance in the fulfillment of course requirements"
+    },
+    "B+": {
+      "points": 3.5,
+      "description": "Very good performance in the fulfillment of course requirements"
+    },
+    "B": {
+      "points": 3.0,
+      "description": "Good performance in the fulfillment of course requirements"
+    },
+    "C+": {
+      "points": 2.5,
+      "description": "More than satisfactory fulfillment of course requirements"
+    },
+    "C": {
+      "points": 2.0,
+      "description": "Satisfactory fulfillment of course requirements"
+    },
+    "D": {
+      "points": 1.0,
+      "description": "Fulfillment of the minimum requirements for the course"
+    },
+    "F": {
+      "points": 0.0,
+      "description": "Failure, non-fulfillment of the minimum course requirements"
+    },
+    "W": {
+      "points": 0.0,
+      "description": "Withdrawal from a course without permission"
+    },
+    "WP": {
+      "points": null,
+      "description": "Withdrawal from a course with permission (not included in QPI)"
+    },
+    "INC": {
+      "points": null,
+      "description": "Incomplete (temporary grade)"
+    },
+    "NE": {
+      "points": null,
+      "description": "No Final Examination (temporary grade)"
+    },
+    "AUD": {
+      "points": null,
+      "description": "Audit (not included in QPI)"
+    },
+    "S": {
+      "points": null,
+      "description": "Satisfactory performance in basic/bridging and INTACT courses"
+    },
+    "U": {
+      "points": null,
+      "description": "Unsatisfactory performance in basic/bridging and INTACT courses"
+    }
+  },
+  "qpi_formula": {
+    "description": "Quality Point Index (QPI) is the weighted average measuring academic performance",
+    "calculation": "Sum of (grade_points × units) ÷ total_units",
+    "steps": [
+      "Multiply quality point value of each grade by credit units",
+      "Add all products together",
+      "Divide by total number of units taken"
+    ]
+  },
+  "excluded_from_qpi": [
+    "Bridging courses",
+    "Basic courses", 
+    "INTACT",
+    "NSTP"
+  ],
+  "source": "Ateneo College Student Handbook Vol 1, 2025 Edition, Section V"
+}

@@ -7,3 +7,4 @@ dist/
 debug_*.html
 logs/
 supabase/.temp/
+chat/.env

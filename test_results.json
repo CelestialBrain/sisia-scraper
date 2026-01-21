@@ -1,0 +1,122 @@
+[
+  {
+    "promptId": 1,
+    "prompt": "Who teaches CS 11?",
+    "response": "I couldn't find any instructors for CS 11 this term.",
+    "sessionId": "session_1768534404662_aa52k6"
+  },
+  {
+    "promptId": 2,
+    "prompt": "Search for courses about 'Ethics'.",
+    "response": "I found 20 courses related to 'Ethics,' including BIO 183.1i (BIOETHICS: HISTORICAL PERSPECTIVES), COMM 22 (MEDIA LAW AND ETHICS), ECE 162 (ENGINEERING LAWS, CONTRACTS AND ETHICS), and others. Would you like me to list them all?",
+    "sessionId": "session_1768534407530_yogg30"
+  },
+  {
+    "promptId": 3,
+    "prompt": "Find instructor 'Nable'.",
+    "response": "I found Job A. Nable.",
+    "sessionId": "session_1768534410276_jkbsz6"
+  },
+  {
+    "promptId": 4,
+    "prompt": "What is the schedule for room CTC 102?",
+    "response": "Okay, here is the schedule for room CTC 102:\n\n**Monday:**\n*   8:00-9:30: POLSC 111 (Section A) with Ronald Pernia\n*   9:30-11:00: BIO 140.01 (Section B) with MARIA KATRINA C. CONSTANTINO\n*   11:00-12:30: MATH 21 (Section C) with Daniel Lorenzo Mirasol\n*   14:00-15:30: DLQ 10 (Section E1) with JAVIER MIGUEL A. GALVEZ\n*   15:30-17:00: PSYC 199.2 (Section F1) with NICO A. CANOY\n*   18:00-21:00: SOCIO 392.4 (Section IM) with Melissa Navarra\n\n**Tuesday:**\n*   8:00-9:30: BIO 100.01 (Section J) with Jhoana Garces\n*   9:30-11:00: PHILO 13 (Section K1) with RANILO B. HERMIDA\n*   11:00-12:30: PHILO 12 (Section L1) with Patrick Vance Nogoy, SJ\n*   13:00-14:00: INTACT 12 (Section INT-TN) with Lito Nillo\n*   14:00-15:30: PHILO 13 (Section N1) with RANILO B. HERMIDA\n*   16:00-17:00: INTACT 12 (Section INT-TQ4) with Keith Xavier Sazon\n\n**Wednesday:**\n*   11:00-14:00: EURO 182.5i (Section UV1) with Ma Vhiktoria Siva\n*   17:00-20:00: EURO 185.8i (Section YW) with Ian Niccolo Tobia\n\n**Thursday:**\n*   8:00-9:30: POLSC 111 (Section A) with Ronald Pernia\n*   9:30-11:00: BIO 140.01 (Section B) with MARIA KATRINA C. CONSTANTINO\n*   11:00-12:30: MATH 21 (Section C) with Daniel Lorenzo Mirasol\n*   14:00-15:30: DLQ 10 (Section E1) with JAVIER MIGUEL A. GALVEZ\n*   15:30-17:00: PSYC 199.2 (Section F1) with NICO A. CANOY\n\n**Friday:**\n*   8:00-9:30: BIO 100.01 (Section J) with Jhoana Garces\n*   9:30-11:00: PHILO 13 (Section K1) with RANILO B. HERMIDA\n*   11:00-12:30: PHILO 12 (Section L1) with Patrick Vance Nogoy, SJ\n*   14:00-15:30: PHILO 13 (Section N1) with RANILO B. HERMIDA",
+    "sessionId": "session_1768534412572_bmy10r"
+  },
+  {
+    "promptId": 5,
+    "prompt": "Show me the curriculum for BS Computer Science.",
+    "response": "Here is the curriculum for BS Computer Engineering. In the first year, first semester, you will have CHEM 21.31, CHEM 21.32, ENGG 30.02, ENGL 11, FILI 12, INTACT 11, MATH 10, PATHFit 1, SocSc 11, and THEO 11. In the first year, second semester, you will have ENGG 11, ENLIT 12, FILI 11, FLC 11, HISTO 11, INTACT 12, MATH 30.23, PATHFit 2, PHYS 31.31, and PHYS 31.32.\n\nFor the second year, there is a summer term with ENGG 21 and MATH 30.24. The first semester includes ENGG 101.01, ENGG 101.02, ENGG 170, ENGG 24, ENGG 25, ENGG 31, HISTO 12, PATHFit 3, and PHILO 11. The second semester includes ENGG 102.01, ENGG 102.02, ENGG 111.01, ENGG 111.02, ENGG 16.22, ENGG 171.20, ENGG 32, NSTP 11, PATHFit 4, STS 10, SocSc 12, and THEO 12.\n\nFor the third year, first semester includes ArtAp 10, ENGG 121.01, ENGG 121.02, ENGG 161, ENGG 27.01, IE 1, IE 2, NSTP 12, PHILO 12, and SocSc 13. The second semester includes ENGG 122.01, ENGG 122.02, ENGG 125.03, ENGG 151.01, ENGG 151.02, ENGG 192, ENGG 38, PHILO 13, and THEO 13.\n\nFor the fourth year, there is a summer term with ENGG 197. The first semester includes ENGG 123.01, ENGG 123.02, ENGG 142.20, ENGG 143.01, ENGG 143.02, ENGG 152.01, ENGG 18X.XX-1 (IE 4), ENGG 199.1, and SocSc 14. The second semester includes DLQ 10, ENGG 124.01, ENGG 124.02, ENGG 126, ENGG 156, ENGG 190, ENGG 199.2, and IE 3.\n\nFinally, for the fifth year, first semester includes ENGG 160, ENGG 168, ENGG 178.20, ENGG 189, ENGG 18X.XX-2, and ENGG 18X.XX-3.",
+    "sessionId": "session_1768534418382_3s93be"
+  },
+  {
+    "promptId": 6,
+    "prompt": "List all programs in the School of Science and Engineering.",
+    "response": "I couldn't find any programs listed under \"School of Science and Engineering.\" Would you like me to search for programs using different search terms, like specific departments (e.g., \"Computer Science\", \"Mathematics\") or degree types (e.g., \"BS\", \"AB\")?",
+    "sessionId": "session_1768534424244_w4gq66"
+  },
+  {
+    "promptId": 7,
+    "prompt": "Show me only the lecture sections for CHEM 10.",
+    "response": "I couldn't find any sections for CHEM 10.",
+    "sessionId": "session_1768534426819_p3dnye"
+  },
+  {
+    "promptId": 8,
+    "prompt": "Are there any Math classes on Saturdays?",
+    "response": "Yes, I found one Math class, MATH 100.1, that is held on Saturday from 08:00-11:00.",
+    "sessionId": "session_1768534429139_qfkuja"
+  },
+  {
+    "promptId": 9,
+    "prompt": "What are the prerequisites for CS 12?",
+    "response": "I couldn't find any prerequisites for ENLIT-LCS 125. Would you like me to check for a different course?",
+    "sessionId": "session_1768534431558_o78o8w"
+  },
+  {
+    "promptId": 10,
+    "prompt": "Find me a pattern analysis course.",
+    "response": "I couldn't find any courses matching \"Pattern Analysis\".",
+    "sessionId": "session_1768534434026_xkdpx4"
+  },
+  {
+    "promptId": 11,
+    "prompt": "When does instructor 'Ang' have classes?",
+    "response": "I found several instructors named 'Ang'. Here are their schedules:\n\n*   **Edwin K.Y. Ang** teaches PEPC 11.24 on Fridays from 07:00-08:00 and 08:00-09:00, and again from 09:30-10:30.\n*   **Harveen Jhendall Ang** teaches CSP 199 on Fridays from 08:00-09:30.\n*   **Alvin P. Ang** teaches ECON 299.2 and ECON 399.2, but the schedule does not specify the day or time.\n*   **Angelica Issah V. Ang** teaches PSYC 298, but the schedule does not specify the day or time.\n*   **Sophia Angeli S. Dayrit** teaches ENVI 299.1 and STS 10, but the schedule does not specify the day or time.\n*   **Angela Fatima H. Guzon** teaches MTHED 299.1, MTHED 299.2, and MTHED 399.2, but the schedule does not specify the day or time.\n*   **Angeli Marie T. Rodil** teaches PEPC 16.05 and PEPC 18.04 on Fridays.",
+    "sessionId": "session_1768534436238_wboi46"
+  },
+  {
+    "promptId": 12,
+    "prompt": "Does instructor 'Guidote' teach any chemistry classes?",
+    "response": "Yes, instructor Guidote teaches the following chemistry classes: CHEM 199.2, CHEM 390.14, CHEM 46.50, CHEM 142.01, and CHEM 43.11.",
+    "sessionId": "session_1768534439961_sod8zp"
+  },
+  {
+    "promptId": 13,
+    "prompt": "Compare the schedules of CS 11 section A and section B.",
+    "response": "I couldn't find any sections for CS 11. Did you mean a different course code?",
+    "sessionId": "session_1768534442364_l3i2xh"
+  },
+  {
+    "promptId": 14,
+    "prompt": "Is room F-223 available on Monday at 9:00 AM?",
+    "response": "I couldn't find any classes scheduled for room F-223 on Monday. This means the room is likely available at 9:00 AM, but I can't guarantee it.",
+    "sessionId": "session_1768534444757_lsd9hl"
+  },
+  {
+    "promptId": 15,
+    "prompt": "Can I take CS 21 if I haven't taken CS 11?",
+    "response": "I couldn't find any prerequisites for CS 21. It might be a typo, though. Did you mean ENLIT-LCS 219?",
+    "sessionId": "session_1768534447304_mg37x7"
+  },
+  {
+    "promptId": 16,
+    "prompt": "Find a theology class that fits in a MWF 9-10 slot.",
+    "response": "I found some Theology classes, but none of them fit the MWF 9-10 slot exactly. Would you like me to search for theology classes on just Monday, Wednesday, or Friday at 9-10?",
+    "sessionId": "session_1768534449753_u2cth1"
+  },
+  {
+    "promptId": 17,
+    "prompt": "Build me a schedule for a first year CS student that includes CS 11, Math 10, and En11, avoiding 7 AM classes.",
+    "response": "I couldn't find a conflict-free schedule with those courses. Would you like me to try building a schedule without avoiding 7 AM classes?",
+    "sessionId": "session_1768534452212_hiao5x"
+  },
+  {
+    "promptId": 18,
+    "prompt": "I need to find a class to replace my 10 AM slot. What are my options in the Core Curriculum?",
+    "response": "To find classes that fit your schedule, I need a bit more information. Can you tell me which days of the week you need a replacement class for? For example, are you looking for something to replace a 10 AM class on Mondays and Wednesdays?",
+    "sessionId": "session_1768534454822_tvhodg"
+  },
+  {
+    "promptId": 19,
+    "prompt": "Explain the difference between the 'BS CS' and 'BS MIS' curriculums.",
+    "response": "The BS CS (Bachelor of Science in Mathematics) curriculum focuses heavily on mathematical theory and concepts, including advanced calculus, linear algebra, and real/complex analysis. The BS MIS (Bachelor of Science in Management of Applied Chemistry) curriculum, on the other hand, includes courses in chemistry, financial accounting, and marketing, with a focus on the chemical industry.\n",
+    "sessionId": "session_1768534456620_knoux2"
+  },
+  {
+    "promptId": 20,
+    "prompt": "Check if there are any conflicts between CS 11 Sec A and Math 11 Sec B.",
+    "response": "I couldn't find a conflict-free schedule combining CS 11 and MATH 11. This could mean that the sections you specified have overlapping times.",
+    "sessionId": "session_1768534459564_wgmi4y"
+  }
+]

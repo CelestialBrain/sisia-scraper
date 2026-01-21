@@ -99,12 +99,16 @@ export class FacebookScraper {
       log.info(`Using proxy: ${proxy.server}`);
     }
 
+    const isHeadless = this.config.headless === true;  // Explicit false unless specifically set to true
+    log.info(`   Browser mode: ${isHeadless ? 'HEADLESS' : 'VISIBLE WINDOW'}`);
+    
     this.browser = await chromium.launch({
-      headless: this.config.headless,
+      headless: isHeadless,
       args: [
         "--disable-blink-features=AutomationControlled",
         "--disable-dev-shm-usage",
         "--no-sandbox",
+        "--start-maximized",
       ],
     });
 
@@ -180,6 +184,281 @@ export class FacebookScraper {
   }
 
   /**
+   * Create a new page in the same context for parallel scraping
+   * All pages share cookies/session but can navigate independently
+   */
+  async createWorkerPage(): Promise<Page> {
+    if (!this.context) throw new Error("Browser not launched");
+    
+    const page = await this.context.newPage();
+    
+    // Block images if enabled
+    if (this.config.blockImages) {
+      await page.route('**/*.{png,jpg,jpeg,gif,webp,svg,ico}', route => route.abort());
+      await page.route('**/*.css', route => route.abort());
+    }
+    
+    // Evasion: Override navigator.webdriver
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+    
+    return page;
+  }
+
+  /**
+   * HYBRID: Just collect post URLs from search (for parallel discovery)
+   * Returns list of post URLs - actual extraction done sequentially
+   */
+  async collectPostUrls(
+    page: Page,
+    professorName: string,
+    options: { maxPosts?: number; scrollCount?: number; workerId?: number } = {}
+  ): Promise<{ professorName: string; postUrls: string[] }> {
+    const maxPosts = options.maxPosts || 50;
+    const scrollCount = options.scrollCount || 5;
+    const workerId = options.workerId || 0;
+    
+    log.info(`[W${workerId}] 🔍 Searching for: "${professorName}"`);
+    
+    // Build search URL
+    let searchQuery = professorName;
+    if (professorName.includes(",")) {
+      const parts = professorName.split(",").map(s => s.trim());
+      const lastName = parts[0];
+      const firstName = parts[1]?.split(/\s+/)[0];
+      if (firstName && firstName.length > 1) {
+        searchQuery = `${lastName} ${firstName}`;
+      } else {
+        searchQuery = lastName;
+      }
+    }
+    
+    const groupId = process.env.FB_GROUP_ID || "1568550996761154";
+    const searchUrl = `https://www.facebook.com/groups/${groupId}/search/?q=${encodeURIComponent(searchQuery)}`;
+    
+    // Navigate
+    try {
+      await page.goto(searchUrl, { waitUntil: "networkidle", timeout: 30000 });
+    } catch {
+      log.warn(`[W${workerId}] Navigation timeout, continuing...`);
+    }
+    
+    await page.waitForTimeout(this.getWaitTime(2500));
+    
+    // Scroll to load posts
+    for (let i = 0; i < scrollCount; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(this.getWaitTime(1000));
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    
+    // Collect post URLs
+    const postUrls = await page.evaluate(() => {
+      const links: string[] = [];
+      const seenUrls = new Set<string>();
+      
+      document.querySelectorAll('a[href*="/posts/"]').forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        const cleanUrl = href.split('?')[0];
+        if (!seenUrls.has(cleanUrl) && /\/groups\/\d+\/posts\/\d+/.test(cleanUrl)) {
+          seenUrls.add(cleanUrl);
+          links.push(cleanUrl);
+        }
+      });
+      
+      return links;
+    });
+    
+    const uniquePosts = [...new Set(postUrls)].slice(0, maxPosts);
+    log.info(`[W${workerId}] ✅ Found ${uniquePosts.length} posts for "${professorName}"`);
+    
+    return { professorName, postUrls: uniquePosts };
+  }
+
+  /**
+   * Scrape a single professor using a specific page (for parallel execution)
+   */
+  async scrapeWithPage(
+    page: Page,
+    professorName: string,
+    options: { maxPosts?: number; scrollCount?: number; workerId?: number } = {}
+  ): Promise<{ postsProcessed: number; totalComments: number; totalSaved: number }> {
+    const maxPosts = options.maxPosts || 50;
+    const scrollCount = options.scrollCount || 5;
+    const workerId = options.workerId || 0;
+    const isTurbo = this.config.turboMode;
+    
+    log.info(`[W${workerId}] 🤖 Starting scrape for: "${professorName}"`);
+    
+    // Build search URL
+    let searchQuery = professorName;
+    if (professorName.includes(",")) {
+      const parts = professorName.split(",").map(s => s.trim());
+      const lastName = parts[0];
+      const firstName = parts[1]?.split(/\s+/)[0];
+      if (firstName && firstName.length > 1) {
+        searchQuery = `${lastName} ${firstName}`;
+      } else {
+        searchQuery = lastName;
+      }
+    }
+    
+    const groupId = process.env.FB_GROUP_ID || "1568550996761154";
+    const searchUrl = `https://www.facebook.com/groups/${groupId}/search/?q=${encodeURIComponent(searchQuery)}`;
+    
+    log.info(`[W${workerId}]    Search query: "${searchQuery}"`);
+    
+    // Navigate
+    try {
+      await page.goto(searchUrl, { waitUntil: "networkidle", timeout: 30000 });
+    } catch {
+      log.warn(`[W${workerId}] Navigation timeout, continuing...`);
+    }
+    
+    await page.waitForTimeout(this.getWaitTime(2500));
+    
+    // Scroll to load posts
+    for (let i = 0; i < scrollCount; i++) {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(this.getWaitTime(1500));
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    
+    // Collect post URLs
+    const postUrls = await page.evaluate(() => {
+      const links: string[] = [];
+      const seenUrls = new Set<string>();
+      
+      document.querySelectorAll('a[href*="/posts/"]').forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        const cleanUrl = href.split('?')[0];
+        if (!seenUrls.has(cleanUrl) && /\/groups\/\d+\/posts\/\d+/.test(cleanUrl)) {
+          seenUrls.add(cleanUrl);
+          links.push(cleanUrl);
+        }
+      });
+      
+      return links;
+    });
+    
+    const uniquePosts = [...new Set(postUrls)];
+    const postsToProcess = uniquePosts.slice(0, maxPosts);
+    log.info(`[W${workerId}]    Found ${uniquePosts.length} posts, processing ${postsToProcess.length}`);
+    
+    let postsProcessed = 0;
+    let totalComments = 0;
+    let totalSaved = 0;
+    
+    for (let i = 0; i < postsToProcess.length; i++) {
+      const postUrl = postsToProcess[i];
+      const postId = postUrl.match(/(\d+)\/?$/)?.[1] || "unknown";
+      
+      try {
+        await page.goto(postUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+        
+        // Wait for content to load (modal or article)
+        try {
+          await page.waitForSelector('[role="dialog"], [role="article"], [data-pagelet]', { timeout: 5000 });
+        } catch {
+          // Continue anyway
+        }
+        await page.waitForTimeout(this.getWaitTime(2000));
+        
+        // Extract post content for relevance check using multiple strategies
+        const postContent = await page.evaluate(() => {
+          // Try modal first (post detail view)
+          const modal = document.querySelector('[role="dialog"]');
+          if (modal) {
+            const textElements = modal.querySelectorAll('[dir="auto"]');
+            let text = "";
+            textElements.forEach(el => {
+              text += el.textContent + " ";
+            });
+            return text.substring(0, 1000);
+          }
+          
+          // Try article
+          const article = document.querySelector('[role="article"]');
+          if (article) {
+            return article.textContent?.substring(0, 1000) || "";
+          }
+          
+          // Fallback to body text
+          return document.body?.innerText?.substring(0, 1000) || "";
+        });
+        
+        // Skip if truly empty
+        if (!postContent || postContent.trim().length < 20) {
+          postsProcessed++;
+          continue;
+        }
+        
+        // Verify relevance
+        const isRelevant = this.verifyPostRelevance(postContent, professorName);
+        if (!isRelevant) {
+          postsProcessed++;
+          continue;
+        }
+        
+        log.info(`[W${workerId}]    ✓ Post ${i + 1}/${postsToProcess.length} relevant`);
+        
+        // Extract comments from modal or article elements
+        const comments = await page.evaluate(() => {
+          const results: Array<{ text: string; reactions: number; reactionTypes: string[]; isReply: boolean }> = [];
+          
+          // Look for comments in modal or page
+          const container = document.querySelector('[role="dialog"]') || document.body;
+          const articles = container.querySelectorAll('[role="article"]');
+          
+          articles.forEach((el, idx) => {
+            if (idx === 0) return; // Skip main post (first article)
+            
+            // Get text from dir=auto elements (cleaner extraction)
+            const textElements = el.querySelectorAll('[dir="auto"]');
+            let text = "";
+            textElements.forEach(te => {
+              const t = te.textContent?.trim();
+              if (t && t.length > 3) text += t + " ";
+            });
+            
+            const cleanText = text.trim();
+            if (cleanText.length > 15) {
+              results.push({ 
+                text: cleanText.substring(0, 1000), 
+                reactions: 0, 
+                reactionTypes: [], 
+                isReply: false 
+              });
+            }
+          });
+          
+          return results;
+        });
+        
+        if (comments.length > 0) {
+          const { bulkSaveDOMFeedback } = await import("../db/database.js");
+          const savedCount = bulkSaveDOMFeedback(this.sessionId, postUrl, professorName, comments);
+          totalComments += comments.length;
+          totalSaved += savedCount;
+          log.info(`[W${workerId}]       ${savedCount}/${comments.length} comments saved`);
+        }
+        
+        postsProcessed++;
+        
+        // Small delay between posts to avoid detection
+        await page.waitForTimeout(this.getWaitTime(500));
+      } catch (err) {
+        log.warn(`[W${workerId}]    Post ${postId} failed: ${err}`);
+        postsProcessed++;
+      }
+    }
+    
+    log.info(`[W${workerId}] ✅ Complete: ${totalSaved} saved from ${postsProcessed} posts`);
+    return { postsProcessed, totalComments, totalSaved };
+  }
+
+  /**
    * Navigate to URL with human-like behavior
    */
   async navigate(url: string): Promise<void> {
@@ -209,19 +488,83 @@ export class FacebookScraper {
 
   /**
    * Search for a professor in the group
+   * Supports formats: "LASTNAME, FIRSTNAME", "FIRSTNAME LASTNAME", or just "LASTNAME"
    */
-  async searchProfessor(name: string): Promise<void> {
+  async searchProfessor(name: string, course?: string): Promise<void> {
     if (!this.page) throw new Error("Browser not launched");
+    
+    // Parse the name to extract last and first name
+    let searchQuery = name;
+    
+    if (name.includes(",")) {
+      // AISIS format: "LASTNAME, FIRSTNAME M."
+      const parts = name.split(",").map(s => s.trim());
+      const lastName = parts[0];
+      const firstName = parts[1]?.split(/\s+/)[0]; // Get first word of first name
+      if (firstName && firstName.length > 1) {
+        searchQuery = `${lastName} ${firstName}`;
+      } else {
+        searchQuery = lastName;
+      }
+    } else if (name.includes(" ")) {
+      // Already has spaces: "FIRSTNAME LASTNAME" - use as is
+      searchQuery = name;
+    }
+    // else: single word (last name only) - use as is
     
     // Use the group ID directly to avoid URL path issues
     const groupId = process.env.FB_GROUP_ID || "1568550996761154";
-    const searchUrl = `https://www.facebook.com/groups/${groupId}/search/?q=${encodeURIComponent(name)}`;
+    
+    // Add course to search query if provided (helps narrow results)
+    const fullQuery = course ? `${searchQuery} ${course}` : searchQuery;
+    const searchUrl = `https://www.facebook.com/groups/${groupId}/search/?q=${encodeURIComponent(fullQuery)}`;
     
     log.scrape(`Searching for professor: ${name}`);
-    await this.navigate(searchUrl);
+    if (course) log.info(`   With course context: ${course}`);
+    log.info(`   Search query: "${fullQuery}"`);
     
-    // Wait for results to load (reduced for speed)
-    await this.page.waitForTimeout(2000);
+    // Navigate and wait for the page to fully load
+    try {
+      await this.page.goto(searchUrl, { 
+        waitUntil: "networkidle",
+        timeout: 30000 
+      });
+    } catch (e) {
+      log.warn(`Navigation timeout, continuing...`);
+    }
+    
+    // Wait for search results to render - look for article elements or feed container
+    const waitTime = this.getWaitTime(5000);
+    log.info(`   Waiting ${waitTime}ms for content to load...`);
+    
+    try {
+      // Wait for either articles or a div with role="feed" to appear
+      await this.page.waitForSelector('[role="article"], [role="feed"], [data-pagelet*="GroupFeed"]', { 
+        timeout: 10000 
+      });
+      log.info(`   ✓ Content elements detected`);
+    } catch (e) {
+      log.warn(`   Content elements not found, page may not have loaded properly`);
+      
+      // Debug: check what we got
+      const pageInfo = await this.page.evaluate(() => {
+        return {
+          title: document.title,
+          url: window.location.href,
+          bodyLength: document.body?.innerText?.length || 0,
+          bodyPreview: document.body?.innerText?.substring(0, 200) || '',
+          hasLogin: document.body?.innerText?.includes('Log in') || false,
+          hasError: document.body?.innerText?.includes('error') || document.body?.innerText?.includes('Error') || false,
+        };
+      });
+      log.info(`   📋 Page debug: title="${pageInfo.title}", bodyLength=${pageInfo.bodyLength}`);
+      log.info(`   📋 Body preview: ${pageInfo.bodyPreview.substring(0, 100)}...`);
+      if (pageInfo.hasLogin) log.warn(`   ⚠️ Login prompt detected - session may have expired`);
+      if (pageInfo.hasError) log.warn(`   ⚠️ Error text detected on page`);
+    }
+    
+    // Additional wait for dynamic content
+    await this.page.waitForTimeout(waitTime);
   }
 
   /**
@@ -522,8 +865,9 @@ export class FacebookScraper {
   /**
    * Verify if the post content mentions the professor name
    * Returns true if the post appears to be about ONLY this professor (not a comparison)
+   * When first name is provided, requires BOTH first AND last name match
    */
-  verifyPostRelevance(postContent: string, professorName: string): boolean {
+  verifyPostRelevance(postContent: string, professorName: string, course?: string): boolean {
     if (!postContent || !professorName) {
       log.info(`   ⚠️ Empty post content - skipping`);
       return false;
@@ -531,21 +875,61 @@ export class FacebookScraper {
     
     const lowerContent = postContent.toLowerCase();
     
-    // Extract last name (everything before first comma)
-    const nameParts = professorName.split(',').map(s => s.trim());
-    const lastName = nameParts[0]?.toLowerCase() || "";
-    const firstName = nameParts[1]?.split(' ')[0]?.toLowerCase() || "";
+    // Extract last name and first name
+    // Supports: "LASTNAME, FIRSTNAME M." or "FIRSTNAME LASTNAME"
+    let lastName = "";
+    let firstName = "";
     
-    // Check if post mentions our professor
-    const mentionsOurProf = (
-      (lastName.length > 2 && lowerContent.includes(lastName)) ||
-      (firstName.length > 2 && lowerContent.includes(firstName))
-    );
+    if (professorName.includes(",")) {
+      // AISIS format: "LASTNAME, FIRSTNAME M."
+      const nameParts = professorName.split(',').map(s => s.trim());
+      lastName = nameParts[0]?.toLowerCase() || "";
+      firstName = nameParts[1]?.split(/\s+/)[0]?.toLowerCase() || "";
+    } else if (professorName.includes(" ")) {
+      // "FIRSTNAME LASTNAME" format
+      const parts = professorName.split(/\s+/);
+      if (parts.length >= 2) {
+        firstName = parts[0].toLowerCase();
+        lastName = parts[parts.length - 1].toLowerCase();
+      } else {
+        lastName = parts[0].toLowerCase();
+      }
+    } else {
+      // Single word (last name only)
+      lastName = professorName.toLowerCase();
+    }
     
-    if (!mentionsOurProf) {
-      const preview = postContent.slice(0, 50).replace(/\n/g, ' ');
-      log.info(`   ⚠️ Post doesn't mention "${lastName}" - skipping`);
-      return false;
+    // Check name matching
+    const hasLastName = lastName.length > 2 && lowerContent.includes(lastName);
+    const hasFirstName = firstName.length > 2 && lowerContent.includes(firstName);
+    
+    // If we have first name, require BOTH first AND last name match (stricter)
+    // This prevents "Ian Garces" from matching posts about "Jhoana Garces"
+    let mentionsOurProf = false;
+    if (firstName.length > 2) {
+      // Full name provided - require both
+      mentionsOurProf = hasLastName && hasFirstName;
+      if (!mentionsOurProf) {
+        log.info(`   ⚠️ Post doesn't mention both "${lastName}" AND "${firstName}" - skipping`);
+        return false;
+      }
+    } else {
+      // Last name only - just require last name
+      mentionsOurProf = hasLastName;
+      if (!mentionsOurProf) {
+        log.info(`   ⚠️ Post doesn't mention "${lastName}" - skipping`);
+        return false;
+      }
+    }
+    
+    // Optional: verify course context if provided
+    if (course) {
+      const courseLower = course.toLowerCase().replace(/\s+/g, '');
+      const contentNoSpaces = lowerContent.replace(/\s+/g, '');
+      if (!contentNoSpaces.includes(courseLower)) {
+        // Course not mentioned, but still allow if name matches well
+        log.info(`   ⚠️ Post doesn't mention course "${course}" - but name matches`);
+      }
     }
     
     // Detect comparison posts (mentions multiple professors)
@@ -1033,7 +1417,7 @@ export class FacebookScraper {
    */
   async scrapeAllPostsFromSearch(
     professorName: string,
-    options: { maxPosts?: number; scrollCount?: number } = {}
+    options: { maxPosts?: number; scrollCount?: number; course?: string } = {}
   ): Promise<{
     postsProcessed: number;
     totalComments: number;
@@ -1043,14 +1427,16 @@ export class FacebookScraper {
     
     const maxPosts = options.maxPosts || 50;
     const scrollCount = options.scrollCount || 5;
+    const course = options.course;
     const isTurbo = this.config.turboMode;
     
     log.info(`🤖 Starting FULL AUTOMATION for: "${professorName}"${isTurbo ? ' (TURBO)' : ''}`);
     log.info(`   Max posts: ${maxPosts}, Scroll count: ${scrollCount}`);
+    if (course) log.info(`   Course context: ${course}`);
     
-    // Step 1: Search for professor
+    // Step 1: Search for professor (with optional course context)
     log.info("\n📍 Step 1: Searching for professor...");
-    await this.searchProfessor(professorName);
+    await this.searchProfessor(professorName, course);
     await this.page.waitForTimeout(this.getWaitTime(2500));
     
     // Step 2: Scroll to load more posts
@@ -1064,15 +1450,66 @@ export class FacebookScraper {
     await this.page.waitForTimeout(this.getWaitTime(800));
     
     // Step 3: Collect all post links from the page
-    log.info("\n📍 Step 3: Collecting post URLs...");
+    log.info("\\n📍 Step 3: Collecting post URLs...");
+    
+    // First, let's debug what's on the page
+    const debugInfo = await this.page.evaluate(() => {
+      const allLinks = document.querySelectorAll('a[href]');
+      const groupLinks: string[] = [];
+      const allHrefs: string[] = [];
+      
+      allLinks.forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        if (href.includes('/groups/')) {
+          groupLinks.push(href);
+        }
+        // Sample first 20 hrefs
+        if (allHrefs.length < 20) {
+          allHrefs.push(href);
+        }
+      });
+      
+      // Check for various Facebook post patterns
+      const postPatterns = {
+        postsFormat: document.querySelectorAll('a[href*="/posts/"]').length,
+        permalinkFormat: document.querySelectorAll('a[href*="permalink"]').length,
+        groupPostsFormat: document.querySelectorAll('a[href*="/groups/"][href*="/posts/"]').length,
+        groupPermalinkFormat: document.querySelectorAll('a[href*="/groups/"][href*="permalink"]').length,
+        pfbidFormat: document.querySelectorAll('a[href*="pfbid"]').length,
+        storyFbidFormat: document.querySelectorAll('a[href*="story_fbid"]').length,
+        articleElements: document.querySelectorAll('[role="article"]').length,
+      };
+      
+      return {
+        totalLinks: allLinks.length,
+        groupLinksCount: groupLinks.length,
+        groupLinks: groupLinks.slice(0, 10),
+        sampleHrefs: allHrefs,
+        postPatterns,
+        pageUrl: window.location.href,
+        bodyText: document.body.innerText.substring(0, 300),
+      };
+    });
+    
+    log.info(`   📊 Debug: Total links: ${debugInfo.totalLinks}, Group links: ${debugInfo.groupLinksCount}`);
+    log.info(`   📊 Post patterns found:`);
+    log.info(`      - /posts/ format: ${debugInfo.postPatterns.postsFormat}`);
+    log.info(`      - permalink format: ${debugInfo.postPatterns.permalinkFormat}`);
+    log.info(`      - /groups/*/posts/*: ${debugInfo.postPatterns.groupPostsFormat}`);
+    log.info(`      - /groups/*/permalink/*: ${debugInfo.postPatterns.groupPermalinkFormat}`);
+    log.info(`      - pfbid format: ${debugInfo.postPatterns.pfbidFormat}`);
+    log.info(`      - story_fbid format: ${debugInfo.postPatterns.storyFbidFormat}`);
+    log.info(`      - [role=article] elements: ${debugInfo.postPatterns.articleElements}`);
+    log.info(`   📊 Sample group links:`);
+    debugInfo.groupLinks.forEach((link, i) => log.info(`      ${i+1}. ${link.substring(0, 100)}`));
+    
     const postUrls = await this.page.evaluate(() => {
       const links: string[] = [];
       const seenUrls = new Set<string>();
       
-      // Find all links that look like group posts
+      // Pattern 1: Standard /groups/ID/posts/ID format
       document.querySelectorAll('a[href*="/groups/"][href*="/posts/"]').forEach((a) => {
         const href = (a as HTMLAnchorElement).href;
-        // Normalize URL - extract just the post URL without query params
         const match = href.match(/(https:\/\/www\.facebook\.com\/groups\/\d+\/posts\/\d+)/);
         if (match && !seenUrls.has(match[1])) {
           seenUrls.add(match[1]);
@@ -1080,13 +1517,49 @@ export class FacebookScraper {
         }
       });
       
-      // Also check for permalink format
+      // Pattern 2: Permalink format
       document.querySelectorAll('a[href*="/groups/"][href*="permalink"]').forEach((a) => {
         const href = (a as HTMLAnchorElement).href;
         const match = href.match(/(https:\/\/www\.facebook\.com\/groups\/\d+\/permalink\/\d+)/);
         if (match && !seenUrls.has(match[1])) {
           seenUrls.add(match[1]);
           links.push(match[1]);
+        }
+      });
+      
+      // Pattern 3: pfbid format (newer Facebook URL format)
+      document.querySelectorAll('a[href*="pfbid"]').forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        if (href.includes('/groups/') && !seenUrls.has(href)) {
+          // Clean up the URL
+          const cleanUrl = href.split('?')[0];
+          if (!seenUrls.has(cleanUrl)) {
+            seenUrls.add(cleanUrl);
+            links.push(cleanUrl);
+          }
+        }
+      });
+      
+      // Pattern 4: story_fbid format
+      document.querySelectorAll('a[href*="story_fbid"]').forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        if (href.includes('/groups/') && !seenUrls.has(href)) {
+          seenUrls.add(href);
+          links.push(href);
+        }
+      });
+      
+      // Pattern 5: Any link containing /groups/GROUP_ID/ with a long numeric ID after
+      document.querySelectorAll('a[href*="/groups/"]').forEach((a) => {
+        const href = (a as HTMLAnchorElement).href;
+        // Match URLs like /groups/123456/something/789012
+        const match = href.match(/\/groups\/(\d+)\/\w+\/(\d{10,})/);
+        if (match) {
+          const cleanUrl = href.split('?')[0];
+          if (!seenUrls.has(cleanUrl)) {
+            seenUrls.add(cleanUrl);
+            links.push(cleanUrl);
+          }
         }
       });
       
@@ -1137,7 +1610,7 @@ export class FacebookScraper {
         
         // STEP: Verify post is actually about the professor
         const postContent = await this.extractMainPostContent();
-        const isRelevant = this.verifyPostRelevance(postContent, professorName);
+        const isRelevant = this.verifyPostRelevance(postContent, professorName, course);
         
         if (!isRelevant) {
           // Skip this post - it's not about the professor we're searching for
@@ -1442,40 +1915,91 @@ export class FacebookScraper {
     if (!this.page) return false;
     
     try {
-      await this.page.goto("https://www.facebook.com", { 
-        waitUntil: "domcontentloaded",
-        timeout: 60000  // 60 second timeout
-      });
-      await this.page.waitForTimeout(2000); // Give page time to render
+      // Only navigate to Facebook if we're not already there
+      const currentUrl = this.page.url();
+      if (!currentUrl.includes('facebook.com')) {
+        await this.page.goto("https://www.facebook.com", { 
+          waitUntil: "domcontentloaded",
+          timeout: 60000  // 60 second timeout
+        });
+        await this.page.waitForTimeout(2000); // Give page time to render
+      }
     } catch (e) {
       log.error("Failed to navigate to Facebook:", e);
       return false;
     }
     
-    // Check for login form presence (means NOT logged in)
-    const loginForm = await this.page.$('input[name="email"]');
-    return !loginForm;
+    // Check for actual logged-in indicators (more reliable than just absence of login form)
+    try {
+      // Look for indicators that we're fully logged in:
+      // 1. Profile link in header/navigation
+      // 2. Home feed container
+      // 3. Composer box
+      // 4. User menu
+      const loggedInIndicator = await this.page.$('[aria-label="Your profile"], [aria-label="Home"], [data-pagelet="LeftRail"], [role="navigation"] [role="button"]');
+      
+      // Also check we're NOT on login, 2FA, or checkpoint pages
+      const url = this.page.url();
+      const isOnLoginPage = url.includes('/login') || url.includes('checkpoint') || url.includes('two_step_verification');
+      
+      // Check for login form (if present, not logged in)
+      const loginForm = await this.page.$('input[name="email"]');
+      
+      // Check for 2FA form
+      const twoFactorForm = await this.page.$('input[name="approvals_code"]');
+      
+      // Logged in if: has logged-in indicators AND not on login/2FA pages AND no login form AND no 2FA form
+      const isLoggedIn = (loggedInIndicator !== null || (!isOnLoginPage && !loginForm && !twoFactorForm));
+      
+      return isLoggedIn && !loginForm && !twoFactorForm && !isOnLoginPage;
+    } catch (e) {
+      // Navigation happened - check URL
+      const url = this.page.url();
+      return url.includes('facebook.com') && !url.includes('login') && !url.includes('checkpoint');
+    }
   }
 
   /**
-   * Wait for user to log in manually
+   * Wait for user to log in manually (handles 2FA)
    */
   async waitForLogin(timeoutMinutes: number = 5): Promise<boolean> {
     if (!this.page) return false;
     
     log.info("Please log in to Facebook in the browser window...");
+    log.info("   (Complete any 2FA verification if prompted)");
+    log.info("   (Page will NOT refresh - take your time)");
     
     const timeout = timeoutMinutes * 60 * 1000;
-    const checkInterval = 3000;
+    const checkInterval = 5000;  // Check every 5 seconds, not 3
     const startTime = Date.now();
     
     while (Date.now() - startTime < timeout) {
-      // Check if we're now on Facebook with a logged-in state
-      const loggedIn = await this.isLoggedIn();
-      if (loggedIn) {
-        log.success("Login detected!");
-        await this.saveSession();
-        return true;
+      try {
+        // Check current page state WITHOUT navigating (don't interrupt 2FA)
+        const url = this.page.url();
+        
+        // Skip check if we're on a login/checkpoint/2FA page - user is still authenticating
+        if (url.includes('login') || url.includes('checkpoint') || url.includes('two_step')) {
+          // User is on 2FA page, just wait
+          await this.page.waitForTimeout(checkInterval);
+          continue;
+        }
+        
+        // Check if we're on the Facebook home/feed (fully logged in)
+        if (url.includes('facebook.com') && !url.includes('login')) {
+          // Check for actual logged-in content without navigating
+          const feedExists = await this.page.$('[role="feed"], [data-pagelet="Feed"], [aria-label="Your profile"], [aria-label="Home"]');
+          const loginForm = await this.page.$('input[name="email"]');
+          const twoFactorForm = await this.page.$('input[name="approvals_code"]');
+          
+          if (feedExists && !loginForm && !twoFactorForm) {
+            log.success("Login verified!");
+            await this.saveSession();
+            return true;
+          }
+        }
+      } catch (e) {
+        // Ignore errors during check - page might be navigating
       }
       await this.page.waitForTimeout(checkInterval);
     }

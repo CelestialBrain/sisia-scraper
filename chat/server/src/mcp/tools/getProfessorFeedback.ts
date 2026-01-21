@@ -1,14 +1,13 @@
 /**
- * Get Professor Feedback Tool - v2 VERIFIED
+ * Get Professor Feedback Tool - v3 SARCASM-AWARE
  * 
  * Comprehensive professor feedback with:
- * - Context-aware scoring (no false positives)
- * - Verified red flags (truly negative only)
+ * - Sarcasm detection (HAHAHA, "ok!" patterns, "pray")
+ * - Warning patterns (RUN, pray, god help, never again)
+ * - Negative reaction weighting (sad/angry = negative signal)
+ * - Context-aware scoring
  * - Recommendation system (TAKE/AVOID)
  * - Would-retake sentiment analysis
- * - Success strategies extraction
- * - Credibility scoring
- * - Overall synthesis
  */
 
 import { SchemaType } from '@google/generative-ai';
@@ -60,18 +59,27 @@ const KEYWORDS = {
   attend_strict: ['strict attendance', 'bawal absent', 'checking attendance', 'attendance required'],
   attend_lenient: ['no attendance', 'optional', 'async', 'recorded lectures', 'pwede di pumasok'],
   
-  // Red flags (verified negative - must have negative context)
+  // Red flags (verified negative)
   red_flags_verified: ['racist', 'sexist', 'unfair', 'favorites', 'playing favorites', 'biased', 
                        'bastos', 'walang modo', 'unprofessional', 'problematic', 'never again'],
   
+  // Strong warnings (standalone signals)
+  warnings: ['run', 'run away', 'pray', 'god help', 'good luck', 'rip', 'wtf', 'super low',
+             'grades super low', 'never again', 'biggest mistake', 'regret'],
+  
+  // Sarcasm indicators (when combined with positive words = actually negative)
+  sarcasm: ['hahaha', 'hahahaha', 'lol', 'lmao', '...', 'ok!', 'is.... ok', 'guantanamo', 'prince of boredom'],
+  
   // Would retake
-  would_retake_pos: ['would take again', 'take again', 'retake', 'recommend', 'worth it', 'miss sir', 
-                     'miss his class', 'i miss', 'goated', 'goat', 'best prof'],
-  would_retake_neg: ['never again', 'would not take', 'avoid', 'run', 'run away', 'worst', "don't take"],
+  would_retake_pos: ['would take again', 'take again', 'retake', 'worth it', 'miss sir', 
+                     'miss his class', 'i miss', 'goated', 'goat', 'best prof', 'good experience'],
+  would_retake_neg: ['never again', 'would not take', 'avoid', 'run', 'run away', 'worst', "don't take",
+                     'not worth', 'regret', 'biggest mistake', 'pray'],
   
   // Success strategies  
   success: ['tip', 'tips', 'advice', 'pro tip', 'how i got', 'para pumasa', 'make sure', 'study', 
-            'cheat sheet', 'practice problems', 'rubric', 'just follow', 'listen', 'pay attention']
+            'cheat sheet', 'practice problems', 'rubric', 'just follow', 'listen', 'pay attention',
+            'textbook', 'read the book']
 };
 
 // Pre-compute lowercase
@@ -104,16 +112,46 @@ function count(text: string, key: string): number {
   return words.filter(w => text.includes(w)).length;
 }
 
-// Check if sentence has positive context (for filtering false positives)
-function hasPositiveContext(text: string): boolean {
-  const posWords = ['easy', 'free', 'good', 'great', 'nice', 'love', 'goat', 'best', 'recommend'];
+// Detect sarcasm patterns (HAHAHA after positive, ellipsis, specific phrases)
+function isSarcastic(text: string): boolean {
+  const t = text.toLowerCase();
+  // "ok HAHAHA" pattern
+  if (/ok[!.]*\s*(haha|lol|lmao)/i.test(text)) return true;
+  // Multiple HAHA after mild statement
+  if (/is\.{2,}\s*ok|is\s+ok.*haha/i.test(text)) return true;
+  // Guantanamo, prince of boredom (clearly sarcastic)
+  if (t.includes('guantanamo') || t.includes('prince of boredom')) return true;
+  // "pray" or "god help" = warning, not positive
+  if (t.includes('pray') || t.includes('god help') || t.includes('good luck')) return true;
+  return false;
+}
+
+// Detect strong warning signals
+function hasWarning(text: string): boolean {
+  const t = text.toLowerCase();
+  const warnings = ['run', 'pray', 'god help', 'wtf', 'super low', 'grades super low', 
+                    'never again', 'biggest mistake', 'regret', 'rip'];
+  return warnings.some(w => t.includes(w));
+}
+
+// Check if positive context is genuine (not sarcastic)
+function hasGenuinePositiveContext(text: string): boolean {
+  if (isSarcastic(text)) return false;
+  if (hasWarning(text)) return false;
+  const posWords = ['good', 'great', 'nice', 'love', 'goat', 'best', 'recommend', 'blessing'];
   return posWords.some(w => text.includes(w));
 }
 
 // Check if sentence has negative context
 function hasNegativeContext(text: string): boolean {
-  const negWords = ['bad', 'worst', 'terrible', 'avoid', 'run', 'unfair', 'never', 'no', "don't"];
-  return negWords.some(w => text.includes(w));
+  const t = text.toLowerCase();
+  // Sarcasm = effectively negative
+  if (isSarcastic(t)) return true;
+  // Warnings = negative
+  if (hasWarning(t)) return true;
+  const negWords = ['bad', 'worst', 'terrible', 'avoid', 'unfair', 'never', "don't", 'not easy',
+                    'struggling', 'failed', 'low grades', 'super low'];
+  return negWords.some(w => t.includes(w));
 }
 
 // Recency weight
@@ -149,7 +187,7 @@ function getEvidence(rows: Row[], key: string, max: number = 2, requireNegContex
     for (const kw of (KW[key] || [])) {
       if (textL.includes(kw)) {
         // For red flags, verify negative context
-        if (requireNegContext && hasPositiveContext(textL) && !hasNegativeContext(textL)) continue;
+        if (requireNegContext && hasGenuinePositiveContext(textL) && !hasNegativeContext(textL)) continue;
         
         result.push({ 
           quote: snippet(row.feedback_text, kw), 
@@ -177,14 +215,37 @@ export function handler(args: { professor_name: string; course_code?: string }) 
     return { error: 'Scraper database not available' };
   }
 
-  // Get instructor from SISIA
-  const inst = sisiaDb.prepare(`
+  // First, get the actual scraped instructor names to find the best match
+  const scrapedNames = scraperDb.prepare(`
+    SELECT DISTINCT instructor_name_scraped 
+    FROM professor_feedback 
+    WHERE UPPER(instructor_name_scraped) LIKE ?
+    ORDER BY LENGTH(instructor_name_scraped) DESC
+  `).all(`%${profName}%`) as { instructor_name_scraped: string }[];
+  
+  // Use the most complete scraped name (longest = most specific)
+  const bestScrapedName = scrapedNames.length > 0 ? scrapedNames[0].instructor_name_scraped : profName;
+  
+  // Try to match against SISIA using the scraped name first
+  let inst = sisiaDb.prepare(`
     SELECT i.name, COUNT(DISTINCT cs.id) as sections
     FROM instructor i
     LEFT JOIN class_section cs ON cs.instructor_id = i.id
     WHERE UPPER(i.name) LIKE ?
     GROUP BY i.id ORDER BY sections DESC LIMIT 1
-  `).get(`%${profName}%`) as { name: string; sections: number } | undefined;
+  `).get(`%${bestScrapedName}%`) as { name: string; sections: number } | undefined;
+  
+  // Fallback: if no exact match, try with just the last name
+  if (!inst && bestScrapedName.includes(',')) {
+    const lastName = bestScrapedName.split(',')[0].trim();
+    inst = sisiaDb.prepare(`
+      SELECT i.name, COUNT(DISTINCT cs.id) as sections
+      FROM instructor i
+      LEFT JOIN class_section cs ON cs.instructor_id = i.id
+      WHERE UPPER(i.name) LIKE ?
+      GROUP BY i.id ORDER BY sections DESC LIMIT 1
+    `).get(`%${lastName}%`) as { name: string; sections: number } | undefined;
+  }
 
   // Get feedback
   let q = `SELECT feedback_text, reactions, source_url, scraped_at FROM professor_feedback WHERE UPPER(instructor_name_scraped) LIKE ?`;
@@ -203,10 +264,11 @@ export function handler(args: { professor_name: string; course_code?: string }) 
     };
   }
 
-  // Aggregate scores with weighting
+  // Aggregate scores with weighting AND sarcasm detection
   let aPos = 0, aNeg = 0, tPos = 0, tNeg = 0, dEasy = 0, dHard = 0, wLight = 0, wHeavy = 0, pPos = 0, pNeg = 0;
   let lateStrict = 0, lateLenient = 0, attendStrict = 0, attendLenient = 0;
   let retakePos = 0, retakeNeg = 0;
+  let warningCount = 0;
   const assessSet = new Set<string>();
   let totalReactions = 0;
   
@@ -215,16 +277,35 @@ export function handler(args: { professor_name: string; course_code?: string }) 
     const w = recencyWeight(row.scraped_at);
     totalReactions += row.reactions;
     
-    aPos += count(t, 'a_pos') * w;
-    aNeg += count(t, 'a_neg') * w;
-    tPos += count(t, 'teach_pos') * w;
-    tNeg += count(t, 'teach_neg') * w;
-    dEasy += count(t, 'diff_easy') * w;
-    dHard += count(t, 'diff_hard') * w;
+    // Check for sarcasm/warnings - if present, flip or penalize positive counts
+    const sarcastic = isSarcastic(t);
+    const hasWarn = hasWarning(t);
+    if (hasWarn) warningCount++;
+    
+    // If sarcastic or warning, treat positives as negatives
+    if (sarcastic || hasWarn) {
+      // Flip: count positives as negatives
+      aNeg += count(t, 'a_pos') * w * 0.5; // Partial weight
+      tNeg += count(t, 'teach_pos') * w * 0.5;
+      dHard += count(t, 'diff_easy') * w * 0.5;
+      // Still count explicit negatives
+      aNeg += count(t, 'a_neg') * w;
+      tNeg += count(t, 'teach_neg') * w;
+      dHard += count(t, 'diff_hard') * w;
+      pNeg += count(t, 'pers_neg') * w;
+    } else {
+      // Normal counting
+      aPos += count(t, 'a_pos') * w;
+      aNeg += count(t, 'a_neg') * w;
+      tPos += count(t, 'teach_pos') * w;
+      tNeg += count(t, 'teach_neg') * w;
+      dEasy += count(t, 'diff_easy') * w;
+      dHard += count(t, 'diff_hard') * w;
+      pPos += count(t, 'pers_pos') * w;
+      pNeg += count(t, 'pers_neg') * w;
+    }
     wLight += count(t, 'work_light') * w;
     wHeavy += count(t, 'work_heavy') * w;
-    pPos += count(t, 'pers_pos') * w;
-    pNeg += count(t, 'pers_neg') * w;
     
     // Policies (require 2+ matches OR high confidence)
     const ls = count(t, 'late_strict');
@@ -233,9 +314,9 @@ export function handler(args: { professor_name: string; course_code?: string }) 
     const al = count(t, 'attend_lenient');
     
     // Only count if context is consistent (not positive context for strict)
-    if (ls > 0 && !hasPositiveContext(t)) lateStrict += ls;
+    if (ls > 0 && !hasGenuinePositiveContext(t)) lateStrict += ls;
     if (ll > 0) lateLenient += ll;
-    if (as > 0 && !hasPositiveContext(t)) attendStrict += as;
+    if (as > 0 && !hasGenuinePositiveContext(t)) attendStrict += as;
     if (al > 0) attendLenient += al;
     
     // Would retake
@@ -299,7 +380,7 @@ export function handler(args: { professor_name: string; course_code?: string }) 
   const positiveSignals = (scores.a_able >= 4 ? 1 : 0) + (scores.teaching >= 4 ? 2 : 0) + 
                           (scores.personality >= 4 ? 1 : 0) + (retakePos > retakeNeg ? 1 : 0);
   const negativeSignals = (scores.teaching <= 2 ? 2 : 0) + (redFlags.length >= 2 ? 2 : 0) + 
-                          (retakeNeg > retakePos * 2 ? 1 : 0);
+                          (retakeNeg > retakePos * 2 ? 1 : 0) + (warningCount >= 3 ? 2 : 0);
   
   const recommendation = {
     take: positiveSignals > negativeSignals,
@@ -321,7 +402,8 @@ export function handler(args: { professor_name: string; course_code?: string }) 
   
   return {
     instructor: {
-      name: inst?.name || profName,
+      name: inst?.name || bestScrapedName || profName,
+      scraped_as: bestScrapedName,
       in_sisia: !!inst,
       teaching: (inst?.sections || 0) > 0,
       sections: inst?.sections || 0

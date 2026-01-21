@@ -17,7 +17,14 @@ const VOFC_URL = 'https://aisis.ateneo.edu/j_aisis/J_VOFC.do';
 export async function getDegreePrograms(page: Page): Promise<DegreeProgram[]> {
   console.log('📋 Fetching degree programs...');
   
-  await page.goto(VOFC_URL, { waitUntil: 'networkidle' });
+  await page.goto(VOFC_URL, { 
+    waitUntil: 'domcontentloaded',
+    timeout: 30000 
+  });
+  await page.waitForTimeout(1500);  // Wait for page to stabilize
+  
+  // Wait for dropdown to be available
+  await page.waitForSelector('select[name="degCode"]', { timeout: 10000 });
   
   const html = await page.content();
   const $ = cheerio.load(html);
@@ -46,25 +53,70 @@ export async function getDegreePrograms(page: Page): Promise<DegreeProgram[]> {
 
 /**
  * Scrape curriculum for a specific degree program
+ * Uses retry logic to handle page navigation timing issues
  */
 export async function scrapeCurriculum(
   page: Page,
-  degCode: string
+  degCode: string,
+  maxRetries: number = 3
 ): Promise<Curriculum> {
-  await page.goto(VOFC_URL, { waitUntil: 'networkidle' });
+  let lastError: Error | null = null;
   
-  // Select degree program
-  await page.selectOption('select[name="degCode"]', degCode);
-  await page.waitForLoadState('networkidle');
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Navigate to VOFC page
+      await page.goto(VOFC_URL, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
+      });
+      await page.waitForTimeout(1000);  // Wait for page to stabilize
+      
+      // Wait for the dropdown to be available
+      await page.waitForSelector('select[name="degCode"]', { timeout: 10000 });
+      
+      // Select degree program
+      await page.selectOption('select[name="degCode"]', degCode);
+      
+      // Wait for the page to update after selection
+      await page.waitForTimeout(2000);
+      
+      // Wait for navigation to complete - try multiple strategies
+      try {
+        await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+      } catch {
+        // Ignore timeout, page may already be loaded
+      }
+      
+      // Additional wait for page content to settle
+      await page.waitForTimeout(1000);
+      
+      // Get the page HTML - wrap in try-catch for navigation race
+      let html: string;
+      try {
+        html = await page.content();
+      } catch (contentError) {
+        // Wait and retry getting content
+        await page.waitForTimeout(2000);
+        html = await page.content();
+      }
+      
+      // Extract degree name from dropdown
+      const $ = cheerio.load(html);
+      const degreeName = $(`select[name="degCode"] option[value="${degCode}"]`).text().trim();
+      
+      return parseCurriculumHTML(html, degCode, degreeName);
+      
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries) {
+        console.log(`  ⚠️  Retry ${attempt}/${maxRetries} for ${degCode}...`);
+        await page.waitForTimeout(2000);
+      }
+    }
+  }
   
-  // Get the page HTML
-  const html = await page.content();
-  
-  // Extract degree name from dropdown
-  const $ = cheerio.load(html);
-  const degreeName = $(`select[name="degCode"] option[value="${degCode}"]`).text().trim();
-  
-  return parseCurriculumHTML(html, degCode, degreeName);
+  // All retries failed
+  throw lastError || new Error(`Failed to scrape curriculum for ${degCode}`);
 }
 
 /**

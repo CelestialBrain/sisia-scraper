@@ -1,13 +1,32 @@
+/**
+ * SISIA Chat App Styles
+ * 
+ * Design: Modern Swiss + AISIS Nostalgia
+ * - AISIS colors: Light blue background, dark blue (#003366), gold accents
+ * - Swiss design: Clean typography, generous whitespace, rounded corners
+ */
+
 :root {
-  --bg-primary: #0d0d0d;
-  --bg-secondary: #1a1a1a;
-  --bg-tertiary: #2a2a2a;
-  --text-primary: #ececec;
-  --text-secondary: #9a9a9a;
-  --accent: #10a37f;
-  --accent-hover: #0d8c6d;
-  --border: #333;
-  --user-bg: #2f2f2f;
+  /* AISIS-inspired color palette */
+  --aisis-dark-blue: #003366;
+  --aisis-medium-blue: #004080;
+  --aisis-light-blue: #e8f4fc;
+  --aisis-bg-blue: #f0f7fb;
+  --aisis-gold: #f59e0b;
+  --aisis-gold-hover: #d97706;
+  
+  /* Neutral palette */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --border: #e2e8f0;
+  --border-hover: #cbd5e1;
+  
+  /* Accents */
+  --accent: var(--aisis-dark-blue);
+  --accent-hover: var(--aisis-medium-blue);
 }
 
 * {
@@ -17,8 +36,8 @@
 }
 
 body {
-  font-family: "Söhne", -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg-primary);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--aisis-bg-blue);
   color: var(--text-primary);
   min-height: 100vh;
 }
@@ -27,6 +46,7 @@ body {
   min-height: 100vh;
   display: flex;
   justify-content: center;
+  padding: 16px;
 }
 
 .chat-container {
@@ -34,26 +54,69 @@ body {
   max-width: 800px;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: calc(100vh - 32px);
+  background: var(--bg-secondary);
+  border-radius: 20px;
+  box-shadow: 
+    0 4px 6px rgba(0, 51, 102, 0.05),
+    0 10px 40px rgba(0, 51, 102, 0.1);
+  overflow: hidden;
 }
 
-/* Header */
+/* Header - AISIS-inspired dark blue */
 .chat-header {
   padding: 16px 24px;
-  text-align: center;
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--aisis-dark-blue) 0%, var(--aisis-medium-blue) 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.chat-header h1 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
+.header-left h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
-.chat-header p {
+.header-left p {
   font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: 4px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.login-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Link banner */
+.link-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  font-size: 14px;
+  border-bottom: 1px solid #fcd34d;
 }
 
 /* Messages */
@@ -64,6 +127,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  background: var(--bg-primary);
 }
 
 /* Welcome screen */
@@ -79,9 +143,11 @@ body {
 }
 
 .welcome h2 {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 600;
   margin-bottom: 8px;
+  color: var(--aisis-dark-blue);
+  letter-spacing: -0.02em;
 }
 
 .welcome p {
@@ -99,7 +165,7 @@ body {
 .suggestion {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 20px;
   padding: 10px 16px;
   color: var(--text-primary);
   font-size: 14px;
@@ -108,8 +174,9 @@ body {
 }
 
 .suggestion:hover {
-  background: var(--bg-tertiary);
-  border-color: var(--accent);
+  background: var(--aisis-light-blue);
+  border-color: var(--aisis-dark-blue);
+  color: var(--aisis-dark-blue);
 }
 
 /* Messages */
@@ -120,9 +187,9 @@ body {
 }
 
 .message-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -131,17 +198,19 @@ body {
 }
 
 .message.user .message-avatar {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--aisis-dark-blue) 0%, var(--aisis-medium-blue) 100%);
 }
 
 .message.assistant .message-avatar {
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
 }
 
 .message-content {
   flex: 1;
-  line-height: 1.6;
-  padding-top: 4px;
+  line-height: 1.7;
+  padding-top: 6px;
+  color: var(--text-primary);
 }
 
 .message-content p {
@@ -162,53 +231,45 @@ body {
 .dot {
   width: 8px;
   height: 8px;
-  background: var(--text-secondary);
+  background: var(--aisis-dark-blue);
   border-radius: 50%;
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
-.dot:nth-child(1) {
-  animation-delay: -0.32s;
-}
-.dot:nth-child(2) {
-  animation-delay: -0.16s;
-}
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
 
 @keyframes bounce {
-  0%,
-  80%,
-  100% {
-    transform: scale(0);
-  }
-  40% {
-    transform: scale(1);
-  }
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
 }
 
-/* Tables */
+/* Tables - AISIS nostalgic style */
 .chat-table {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
   font-size: 14px;
   background: var(--bg-secondary);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow: hidden;
+  border: 1px solid var(--border);
 }
 
 .chat-table th,
 .chat-table td {
-  padding: 10px 12px;
+  padding: 12px 14px;
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
 
 .chat-table th {
-  background: var(--bg-tertiary);
+  background: linear-gradient(180deg, var(--aisis-light-blue) 0%, #dbeafe 100%);
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--aisis-dark-blue);
   font-size: 12px;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .chat-table tr:last-child td {
@@ -216,7 +277,7 @@ body {
 }
 
 .chat-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--aisis-light-blue);
 }
 
 /* Input */
@@ -224,24 +285,26 @@ body {
   padding: 16px 24px 24px;
   display: flex;
   gap: 12px;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   border-top: 1px solid var(--border);
 }
 
 .chat-input input {
   flex: 1;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  border: 2px solid var(--border);
   border-radius: 24px;
   padding: 14px 20px;
   color: var(--text-primary);
   font-size: 15px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
 
 .chat-input input:focus {
-  border-color: var(--accent);
+  border-color: var(--aisis-dark-blue);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 3px rgba(0, 51, 102, 0.1);
 }
 
 .chat-input input::placeholder {
@@ -252,18 +315,19 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--aisis-gold) 0%, var(--aisis-gold-hover) 100%);
   border: none;
   color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: all 0.2s;
 }
 
 .chat-input button:hover:not(:disabled) {
-  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
 }
 
 .chat-input button:disabled {
@@ -278,6 +342,15 @@ body {
 
 /* Responsive */
 @media (max-width: 640px) {
+  .app {
+    padding: 0;
+  }
+  
+  .chat-container {
+    border-radius: 0;
+    min-height: 100vh;
+  }
+  
   .messages {
     padding: 16px;
   }

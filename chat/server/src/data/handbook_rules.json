@@ -1,0 +1,105 @@
+{
+  "categories": {
+    "A": {
+      "name": "Offenses Against Persons",
+      "examples": [
+        "Physical violence or assault",
+        "Threats of physical violence",
+        "Verbal abuse or public humiliation",
+        "Harassment, bullying, or cyberbullying",
+        "Sexual harassment or misconduct",
+        "Discrimination based on race, gender, religion, or sexual orientation"
+      ]
+    },
+    "B": {
+      "name": "Offenses Against Integrity",
+      "examples": [
+        "Falsification of academic records or documents",
+        "Impersonation or misrepresentation",
+        "Unauthorized access to computer systems (hacking)",
+        "Forgery of signatures or documents",
+        "Providing false information to University officials"
+      ]
+    },
+    "C": {
+      "name": "Offenses Against Property",
+      "examples": [
+        "Disobeying school regulations on care of University environment",
+        "Stealing or unauthorized possession of others' property",
+        "Selling, disposing of, or tampering with stolen property",
+        "Vandalism or defacement of school, personal, or public property",
+        "Engaging in activities resulting in damage to school property"
+      ]
+    },
+    "D": {
+      "name": "Offenses Against Order",
+      "examples": [
+        "Failure to perform responsibilities as students",
+        "Failure to wear appropriate attire for university setting",
+        "Disturbing or disrupting a class or school function",
+        "Violating rules of Residence Halls or Rizal Library",
+        "Failure to comply with official summonses",
+        "Obstructing administrative processes",
+        "Gambling within school premises",
+        "Violation of drug policies",
+        "Unauthorized disclosure of personal/sensitive information"
+      ]
+    },
+    "E": {
+      "name": "Offenses Involving Dishonesty",
+      "examples": [
+        "Cheating during examinations",
+        "Plagiarism",
+        "Fabrication of data, citations, or results",
+        "Unauthorized use of AI for academic exercises",
+        "Deception or providing false information",
+        "Forging or tampering with academic records",
+        "Identity fraud",
+        "Filing false reports or accusations"
+      ]
+    }
+  },
+  "academic_dishonesty": {
+    "cheating": [
+      "Any form of unauthorized communication during exams",
+      "Making unnecessary noise (talking to oneself)",
+      "Looking at others' papers",
+      "Making one's paper visible to others",
+      "Possession of unauthorized notes or materials during exams"
+    ],
+    "plagiarism": "Using others' work without proper attribution",
+    "fabrication": "Submission of falsified data, information, citations, or results",
+    "unauthorized_ai": "Unauthorized use of external aid/AI resulting in undue academic advantage",
+    "consequences": [
+      "Grade penalty (minimum F in the course)",
+      "Possible suspension or expulsion for repeat offenses",
+      "Permanent notation on academic record"
+    ]
+  },
+  "sanctions": {
+    "levels": [
+      {
+        "level": 1,
+        "name": "Warning",
+        "description": "Written reprimand for minor first-time offenses"
+      },
+      {
+        "level": 2,
+        "name": "Probation",
+        "description": "Conditional continuation of enrollment"
+      },
+      {
+        "level": 3,
+        "name": "Suspension",
+        "description": "Temporary exclusion from classes and campus"
+      },
+      {
+        "level": 4,
+        "name": "Expulsion",
+        "description": "Permanent dismissal from the University"
+      }
+    ]
+  },
+  "handling_office": "Student Conduct and Discipline Section (SCD)",
+  "source": "Ateneo College Student Handbook Vol 2, 2025 Edition"
+}

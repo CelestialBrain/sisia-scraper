@@ -735,20 +735,24 @@ program
   .argument("<professors...>", "Professor names to search for")
   .option("-m, --max-posts <number>", "Maximum posts to process per professor", "10")
   .option("-s, --scroll-count <number>", "Number of scrolls to load posts", "5")
-  .option("--headless", "Run in headless mode (no visible browser window)")
+  .option("--visible", "Show browser window (for login/debugging, headless is default)")
   .option("--fast", "Fast mode: skip reaction popup parsing")
   .option("--block-images", "Block images/CSS for faster page loading")
   .option("--turbo", "TURBO mode: maximum speed (60% faster, reduces all wait times)")
   .option("--resume", "Resume from previous progress (skips already completed professors)")
-  .action(async (professors: string[], options: { maxPosts: string; scrollCount: string; headless?: boolean; fast?: boolean; blockImages?: boolean; turbo?: boolean; resume?: boolean }) => {
+  .option("-c, --concurrency <number>", "Number of parallel workers (default: 1)", "1")
+  .action(async (professors: string[], options: { maxPosts: string; scrollCount: string; visible?: boolean; fast?: boolean; blockImages?: boolean; turbo?: boolean; resume?: boolean; concurrency: string }) => {
     log.info("Starting BATCH SCRAPE mode...");
     log.info(`Professors to scrape: ${professors.length}`);
     professors.forEach((p, i) => log.info(`   ${i + 1}. ${p}`));
-    if (options.headless) log.info("Running in HEADLESS mode (background)");
+    if (!options.visible) log.info("Running in HEADLESS mode (background)");
+    if (options.visible) log.info("Running in VISIBLE mode (browser window shown)");
     if (options.fast) log.info("Running in FAST mode (skipping reaction popups)");
     if (options.blockImages) log.info("Blocking images/CSS for faster loading");
     if (options.turbo) log.info("Running in TURBO mode (60% faster)");
     if (options.resume) log.info("Running with RESUME enabled (skipping completed profs)");
+    const concurrency = parseInt(options.concurrency, 10) || 1;
+    if (concurrency > 1) log.info(`Running with ${concurrency} parallel workers`);
 
     // Ensure data directories exist
     ["./data", "./data/sessions", "./data/exports", "./data/raw"].forEach(dir => {
@@ -787,8 +791,9 @@ program
     log.success("Database initialized");
 
     // Create and launch scraper ONCE for all professors
+    // headless is now the default, --visible flag opts out
     const scraper = createScraper({ 
-      headless: options.headless,
+      headless: !options.visible,  // headless unless --visible flag
       fastMode: options.fast,
       blockImages: options.blockImages,
       turboMode: options.turbo,
@@ -804,7 +809,8 @@ program
     const loggedIn = await scraper.isLoggedIn();
     if (!loggedIn) {
       log.warn("Not logged into Facebook. Please log in manually...");
-      const success = await scraper.waitForLogin(5);
+      log.info("TIP: Use --visible flag to see the browser window for login");
+      const success = await scraper.waitForLogin(10);
       if (!success) {
         log.error("Login failed");
         await scraper.close();
@@ -822,35 +828,159 @@ program
     let totalComments = 0;
     let totalSaved = 0;
 
-    // Process each remaining professor
-    for (const professor of remainingProfessors) {
-      log.info(`\n${"=".repeat(50)}`);
-      log.info(`📖 Processing professor ${totalProfessors + 1}/${remainingProfessors.length}: ${professor}`);
-      log.info(`${"=".repeat(50)}`);
+    // Concurrent scraping logic
+    if (concurrency > 1) {
+      log.info(`\n🚀 CONCURRENT MODE: ${concurrency} workers`);
+      
+      // Create worker function
+      const processWorker = async (professorQueue: string[], workerId: number): Promise<{ comments: number; saved: number }> => {
+        let workerComments = 0;
+        let workerSaved = 0;
+        
+        for (const professor of professorQueue) {
+          log.info(`[Worker ${workerId}] Processing: ${professor}`);
+          try {
+            const result = await scraper.scrapeAllPostsFromSearch(professor, {
+              maxPosts: parseInt(options.maxPosts, 10),
+              scrollCount: parseInt(options.scrollCount, 10),
+            });
+            workerComments += result.totalComments;
+            workerSaved += result.totalSaved;
+            
+            // Save progress
+            completedProfessors.push(professor.toLowerCase());
+            writeFileSync(progressPath, JSON.stringify({ 
+              completed: completedProfessors,
+              lastUpdated: new Date().toISOString(),
+            }));
+          } catch (err) {
+            log.error(`[Worker ${workerId}] Error with ${professor}: ${err}`);
+          }
+        }
+        
+        return { comments: workerComments, saved: workerSaved };
+      };
 
-      try {
-        const result = await scraper.scrapeAllPostsFromSearch(professor, {
-          maxPosts: parseInt(options.maxPosts, 10),
-          scrollCount: parseInt(options.scrollCount, 10),
-        });
+      // Distribute professors across workers (round-robin)
+      const workerQueues: string[][] = Array.from({ length: concurrency }, () => []);
+      remainingProfessors.forEach((prof, idx) => {
+        workerQueues[idx % concurrency].push(prof);
+      });
+
+      // HYBRID: Parallel search, then sequential extraction
+      log.info(`Creating ${concurrency} parallel browser pages for search...`);
+      
+      const workerPages = await Promise.all(
+        Array.from({ length: concurrency }, async (_, i) => {
+          const page = await scraper.createWorkerPage();
+          log.info(`   Worker ${i + 1} ready`);
+          return page;
+        })
+      );
+      
+      log.info(`\n🔍 PHASE 1: Parallel URL discovery with ${concurrency} workers...`);
+      
+      // Phase 1: Parallel URL collection
+      const urlPromises = workerQueues.map(async (queue, workerId) => {
+        const page = workerPages[workerId];
+        const results: Array<{ professorName: string; postUrls: string[] }> = [];
         
-        totalProfessors++;
-        totalComments += result.totalComments;
-        totalSaved += result.totalSaved;
+        for (const professor of queue) {
+          try {
+            await page.waitForTimeout(workerId * 500); // Stagger requests
+            
+            const result = await scraper.collectPostUrls(page, professor, {
+              maxPosts: parseInt(options.maxPosts, 10),
+              scrollCount: parseInt(options.scrollCount, 10),
+              workerId: workerId + 1,
+            });
+            
+            results.push(result);
+          } catch (err) {
+            log.error(`[W${workerId + 1}] Error searching ${professor}: ${err}`);
+            results.push({ professorName: professor, postUrls: [] });
+          }
+        }
         
-        // Save progress after each successful professor
-        completedProfessors.push(professor.toLowerCase());
-        writeFileSync(progressPath, JSON.stringify({ 
-          completed: completedProfessors,
-          lastUpdated: new Date().toISOString(),
-          totalProcessed: totalProfessors,
-        }, null, 2));
-        
-        log.success(`   ✅ Completed: ${result.totalSaved} comments saved`);
-      } catch (error) {
-        log.error(`   ❌ Failed: ${error instanceof Error ? error.message : String(error)}`);
+        return results;
+      });
+      
+      // Wait for all searches to complete
+      const allSearchResults = await Promise.all(urlPromises);
+      
+      // Close worker pages
+      for (const page of workerPages) {
+        await page.close();
       }
-    }
+      
+      // Flatten and count URLs
+      const allProfessorUrls = allSearchResults.flat();
+      const totalUrls = allProfessorUrls.reduce((sum, p) => sum + p.postUrls.length, 0);
+      
+      log.info(`\n📋 Found ${totalUrls} total posts across ${allProfessorUrls.length} professors`);
+      log.info(`\n📝 PHASE 2: Sequential extraction (using full extraction logic)...`);
+      
+      // Phase 2: Sequential extraction using the proven scrapeAllPostsFromSearch
+      for (const { professorName, postUrls: _ } of allProfessorUrls) {
+        log.info(`\n${"=".repeat(50)}`);
+        log.info(`📖 Processing: ${professorName}`);
+        log.info(`${"=".repeat(50)}`);
+        
+        try {
+          // Use the full, proven extraction method
+          const result = await scraper.scrapeAllPostsFromSearch(professorName, {
+            maxPosts: parseInt(options.maxPosts, 10),
+            scrollCount: parseInt(options.scrollCount, 10),
+          });
+          
+          totalProfessors++;
+          totalComments += result.totalComments;
+          totalSaved += result.totalSaved;
+          
+          completedProfessors.push(professorName.toLowerCase());
+          writeFileSync(progressPath, JSON.stringify({ 
+            completed: completedProfessors,
+            lastUpdated: new Date().toISOString(),
+          }));
+          
+          log.success(`✅ Completed: ${result.totalSaved} comments saved`);
+        } catch (err) {
+          log.error(`Error with ${professorName}: ${err}`);
+        }
+      }
+      
+      log.info(`\n🏁 Hybrid scraping completed!`);
+    } else {
+      // Sequential processing (original logic)
+      for (const professor of remainingProfessors) {
+        log.info(`\n${"=".repeat(50)}`);
+        log.info(`📖 Processing professor ${totalProfessors + 1}/${remainingProfessors.length}: ${professor}`);
+        log.info(`${"=".repeat(50)}`);
+
+        try {
+          const result = await scraper.scrapeAllPostsFromSearch(professor, {
+            maxPosts: parseInt(options.maxPosts, 10),
+            scrollCount: parseInt(options.scrollCount, 10),
+          });
+          
+          totalProfessors++;
+          totalComments += result.totalComments;
+          totalSaved += result.totalSaved;
+          
+          // Save progress after each successful professor
+          completedProfessors.push(professor.toLowerCase());
+          writeFileSync(progressPath, JSON.stringify({ 
+            completed: completedProfessors,
+            lastUpdated: new Date().toISOString(),
+            totalProcessed: totalProfessors,
+          }, null, 2));
+          
+          log.success(`   ✅ Completed: ${result.totalSaved} comments saved`);
+        } catch (error) {
+          log.error(`   ❌ Failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }  // End of else block (sequential processing)
 
     // Final summary
     endSession(sessionId, "completed");
@@ -883,12 +1013,12 @@ program
   .option("-l, --limit <number>", "Limit number of professors to scrape", "50")
   .option("-m, --max-posts <number>", "Maximum posts to process per professor", "5")
   .option("-s, --scroll-count <number>", "Number of scrolls to load posts", "3")
-  .option("--headless", "Run in headless mode (no visible browser window)")
+  .option("--visible", "Show browser window (for login/debugging, headless is default)")
   .option("--fast", "Fast mode: skip reaction popup parsing")
   .option("--block-images", "Block images/CSS for faster page loading")
   .option("--turbo", "TURBO mode: maximum speed (60% faster)")
   .option("--resume", "Resume from previous progress")
-  .action(async (options: { limit: string; maxPosts: string; scrollCount: string; headless?: boolean; fast?: boolean; blockImages?: boolean; turbo?: boolean; resume?: boolean }) => {
+  .action(async (options: { limit: string; maxPosts: string; scrollCount: string; visible?: boolean; fast?: boolean; blockImages?: boolean; turbo?: boolean; resume?: boolean }) => {
     log.info("Loading professors from SISIA database...");
     
     // Load professors from SISIA DB
@@ -942,7 +1072,7 @@ program
       "--scroll-count", options.scrollCount,
     ];
     
-    if (options.headless) args.push("--headless");
+    if (options.visible) args.push("--visible");
     if (options.fast) args.push("--fast");
     if (options.blockImages) args.push("--block-images");
     if (options.turbo) args.push("--turbo");

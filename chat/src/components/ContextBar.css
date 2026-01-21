@@ -1,0 +1,68 @@
+/* ContextBar - Circular progress showing AI context usage */
+
+.context-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.1));
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.context-bar:hover {
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.15));
+}
+
+.context-bar.expanded {
+  flex-direction: column;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+
+.progress-ring {
+  width: 28px;
+  height: 28px;
+  transform: rotate(-90deg);
+}
+
+.progress-ring-bg {
+  stroke: rgba(255, 255, 255, 0.2);
+}
+
+.progress-ring-fill {
+  stroke: #10b981;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+}
+
+.context-percent {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.8));
+  min-width: 36px;
+}
+
+.context-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+}
+
+.context-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.context-detail-row span:last-child {
+  font-weight: 500;
+  color: var(--text-primary, #fff);
+}

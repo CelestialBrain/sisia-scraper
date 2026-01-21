@@ -1,0 +1,50 @@
+{
+  "retention_requirements": {
+    "First Year": {
+      "min_qpi": 1.80,
+      "description": "Required yearly QPI to be promoted to Sophomore year"
+    },
+    "Sophomore": {
+      "min_qpi": 1.90,
+      "description": "Required yearly QPI to be promoted to Junior year"
+    },
+    "Junior": {
+      "min_qpi": 2.00,
+      "description": "Required yearly QPI to be promoted to Senior year"
+    },
+    "Senior": {
+      "min_qpi": 2.00,
+      "description": "Required yearly QPI for 4-year programs"
+    },
+    "5th Year": {
+      "min_qpi": 2.00,
+      "description": "Required yearly QPI for 5-year programs"
+    }
+  },
+  "graduation_requirement": {
+    "min_qpi": 2.00,
+    "requirements": [
+      "Complete all course requirements for degree program",
+      "Meet minimum yearly QPI for Senior/5th Year",
+      "Not serving a penalty of suspension or expulsion",
+      "Free from all financial and property accountabilities",
+      "Secure clearance from concerned offices"
+    ]
+  },
+  "separation": {
+    "condition": "Students who do not meet the QPI requirement for their year level shall be separated from Ateneo College",
+    "no_diploma": "Seniors/5th Year students who do not meet the required QPI for graduation shall not be entitled to a diploma"
+  },
+  "probation": {
+    "description": "Students who do not meet QPI requirement may be granted probation upon recommendation of Standards Committee",
+    "how_to_apply": "Write a letter of appeal to the Standards Committee through the Office of the AVP for Undergraduate Education",
+    "limit": "Students may be granted probation only once during their entire stay in Ateneo College",
+    "restrictions": [
+      "Cannot officially represent the school in academic activities",
+      "Cannot represent in co-curricular or extracurricular activities",
+      "Cannot participate in inter-collegiate competitions, workshops, and conferences"
+    ]
+  },
+  "yearly_qpi_definition": "QPI computed on the basis of all grades earned during a school year (First Semester, Second Semester, and previous Intersession)",
+  "source": "Ateneo College Student Handbook Vol 1, 2025 Edition, Sections 9-12"
+}
